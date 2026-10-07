@@ -1,0 +1,24 @@
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
+[tool.poetry]
+name = "aav-agent"
+version = "0.1.0"
+description = ""
+authors = ["rpdarst4 <rpdarst4@gmail.com>"]
+readme = "README.md"
+packages = [{include = "aav_agent", from = "src"}]
+
+[tool.poetry.dependencies]
+python = ">=3.11,<4.0"
+pandas = "^3.0.6"
+pysam = "^0.24.1"
+biopython = "^1.88"
+pyyaml = "^6.0.3"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^9.1.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

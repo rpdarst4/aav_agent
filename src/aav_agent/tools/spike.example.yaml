@@ -1,0 +1,34 @@
+# Example spike specification for spike_in.py
+# Paths are relative to the working directory, or to this file if not found there.
+seed: 42
+organisms:
+  - name: Bacillus subtilis
+    taxid: 1423
+    category: soil bacteria
+    fasta: fixtures/contaminants/bacillus_subtilis.fa
+    count: 30
+  - name: Pseudomonas putida
+    taxid: 303
+    category: soil bacteria
+    fasta: fixtures/contaminants/pseudomonas_putida.fa
+    count: 20
+  - name: Spodoptera frugiperda
+    taxid: 7108
+    category: insect
+    fasta: fixtures/contaminants/spodoptera_frugiperda.fa
+    count: 25
+  - name: Autographa californica nucleopolyhedrovirus
+    taxid: 46015
+    category: baculovirus
+    fasta: fixtures/contaminants/acmnpv.fa
+    count: 10
+  - name: Escherichia coli
+    taxid: 562
+    category: enterobacteria
+    fasta: fixtures/contaminants/e_coli.fa
+    count: 15
+  - name: Arabidopsis thaliana
+    taxid: 3702
+    category: plant
+    fasta: fixtures/contaminants/arabidopsis_thaliana.fa
+    count: 10

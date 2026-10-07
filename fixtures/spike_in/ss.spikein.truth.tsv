@@ -1,0 +1,111 @@
+read_id	organism	taxid	category	source_contig	start	end	strand	length	n_sub	n_ins	n_del
+spike/1423/00000/ccs	Bacillus subtilis	1423	soil bacteria	NC_000964.3	2307113	2311894	+	4779	1	0	2
+spike/1423/00001/ccs	Bacillus subtilis	1423	soil bacteria	NC_000964.3	3329673	3334372	-	4700	5	3	2
+spike/1423/00002/ccs	Bacillus subtilis	1423	soil bacteria	NC_000964.3	3372698	3375150	+	2452	3	1	1
+spike/1423/00003/ccs	Bacillus subtilis	1423	soil bacteria	NC_000964.3	998799	1001218	-	2420	1	1	0
+spike/1423/00004/ccs	Bacillus subtilis	1423	soil bacteria	NC_000964.3	3244065	3248865	+	4798	4	0	2
+spike/1423/00005/ccs	Bacillus subtilis	1423	soil bacteria	NC_000964.3	2779998	2784998	-	5004	3	4	0
+spike/1423/00006/ccs	Bacillus subtilis	1423	soil bacteria	NC_000964.3	3282773	3285228	-	2455	0	0	0
+spike/1423/00007/ccs	Bacillus subtilis	1423	soil bacteria	NC_000964.3	2888051	2891486	-	3436	0	1	0
+spike/1423/00008/ccs	Bacillus subtilis	1423	soil bacteria	NC_000964.3	3599543	3601996	-	2453	1	0	0
+spike/1423/00009/ccs	Bacillus subtilis	1423	soil bacteria	NC_000964.3	4128852	4131258	-	2406	1	0	0
+spike/1423/00010/ccs	Bacillus subtilis	1423	soil bacteria	NC_000964.3	867780	872558	-	4774	3	0	4
+spike/1423/00011/ccs	Bacillus subtilis	1423	soil bacteria	NC_000964.3	680004	684784	+	4780	1	1	1
+spike/1423/00012/ccs	Bacillus subtilis	1423	soil bacteria	NC_000964.3	8969	13730	-	4761	7	2	2
+spike/1423/00013/ccs	Bacillus subtilis	1423	soil bacteria	NC_000964.3	3499798	3504556	+	4757	3	1	2
+spike/1423/00014/ccs	Bacillus subtilis	1423	soil bacteria	NC_000964.3	1546075	1550773	-	4697	3	1	2
+spike/1423/00015/ccs	Bacillus subtilis	1423	soil bacteria	NC_000964.3	553030	555517	+	2487	1	1	1
+spike/1423/00016/ccs	Bacillus subtilis	1423	soil bacteria	NC_000964.3	4202510	4207198	-	4688	1	1	1
+spike/1423/00017/ccs	Bacillus subtilis	1423	soil bacteria	NC_000964.3	3031333	3034844	+	3510	2	1	2
+spike/1423/00018/ccs	Bacillus subtilis	1423	soil bacteria	NC_000964.3	1165322	1170104	-	4780	5	1	3
+spike/1423/00019/ccs	Bacillus subtilis	1423	soil bacteria	NC_000964.3	3114940	3117397	+	2456	2	0	1
+spike/1423/00020/ccs	Bacillus subtilis	1423	soil bacteria	NC_000964.3	1127043	1131832	-	4790	3	2	1
+spike/1423/00021/ccs	Bacillus subtilis	1423	soil bacteria	NC_000964.3	2882086	2885451	+	3366	4	2	1
+spike/1423/00022/ccs	Bacillus subtilis	1423	soil bacteria	NC_000964.3	3885382	3887717	+	2334	3	0	1
+spike/1423/00023/ccs	Bacillus subtilis	1423	soil bacteria	NC_000964.3	1665442	1667917	+	2475	0	0	0
+spike/1423/00024/ccs	Bacillus subtilis	1423	soil bacteria	NC_000964.3	2821009	2823459	-	2450	1	0	0
+spike/1423/00025/ccs	Bacillus subtilis	1423	soil bacteria	NC_000964.3	1896369	1901128	+	4758	2	2	3
+spike/1423/00026/ccs	Bacillus subtilis	1423	soil bacteria	NC_000964.3	3430646	3433101	+	2452	1	1	4
+spike/1423/00027/ccs	Bacillus subtilis	1423	soil bacteria	NC_000964.3	1433334	1438112	+	4779	3	2	1
+spike/1423/00028/ccs	Bacillus subtilis	1423	soil bacteria	NC_000964.3	331767	335842	+	4079	3	5	1
+spike/1423/00029/ccs	Bacillus subtilis	1423	soil bacteria	NC_000964.3	2999289	3001645	+	2355	1	1	2
+spike/303/00000/ccs	Pseudomonas putida	303	soil bacteria	NC_021505.1	933875	935169	-	1296	1	2	0
+spike/303/00001/ccs	Pseudomonas putida	303	soil bacteria	NC_021505.1	2336292	2339099	-	2806	2	0	1
+spike/303/00002/ccs	Pseudomonas putida	303	soil bacteria	NC_021505.1	4591478	4593767	+	2287	2	0	2
+spike/303/00003/ccs	Pseudomonas putida	303	soil bacteria	NC_021505.1	1370538	1373006	+	2468	1	1	1
+spike/303/00004/ccs	Pseudomonas putida	303	soil bacteria	NC_021505.1	4641978	4644434	+	2455	1	0	1
+spike/303/00005/ccs	Pseudomonas putida	303	soil bacteria	NC_021505.1	16264	18839	-	2575	1	0	0
+spike/303/00006/ccs	Pseudomonas putida	303	soil bacteria	NC_021505.1	1849127	1853826	+	4699	3	2	2
+spike/303/00007/ccs	Pseudomonas putida	303	soil bacteria	NC_021505.1	2101582	2105557	+	3975	1	4	4
+spike/303/00008/ccs	Pseudomonas putida	303	soil bacteria	NC_021505.1	2222874	2223930	+	1056	0	0	0
+spike/303/00009/ccs	Pseudomonas putida	303	soil bacteria	NC_021505.1	5485984	5488356	-	2373	0	1	0
+spike/303/00010/ccs	Pseudomonas putida	303	soil bacteria	NC_021505.1	4505640	4508080	+	2442	1	3	1
+spike/303/00011/ccs	Pseudomonas putida	303	soil bacteria	NC_021505.1	5447104	5449514	-	2410	1	1	1
+spike/303/00012/ccs	Pseudomonas putida	303	soil bacteria	NC_021505.1	4843742	4846196	+	2454	1	0	0
+spike/303/00013/ccs	Pseudomonas putida	303	soil bacteria	NC_021505.1	5113989	5116445	-	2455	1	0	1
+spike/303/00014/ccs	Pseudomonas putida	303	soil bacteria	NC_021505.1	1246852	1249264	+	2411	2	2	3
+spike/303/00015/ccs	Pseudomonas putida	303	soil bacteria	NC_021505.1	4105465	4110186	-	4719	2	1	3
+spike/303/00016/ccs	Pseudomonas putida	303	soil bacteria	NC_021505.1	1178465	1181898	-	3433	3	1	1
+spike/303/00017/ccs	Pseudomonas putida	303	soil bacteria	NC_021505.1	147535	149996	+	2459	3	0	2
+spike/303/00018/ccs	Pseudomonas putida	303	soil bacteria	NC_021505.1	1736976	1739354	-	2378	1	1	1
+spike/303/00019/ccs	Pseudomonas putida	303	soil bacteria	NC_021505.1	5924771	5928348	+	3577	3	1	1
+spike/7108/00000/ccs	Spodoptera frugiperda	7108	insect	NW_026095728.1	184602	187246	-	2645	2	1	0
+spike/7108/00001/ccs	Spodoptera frugiperda	7108	insect	NW_026095714.1	58637	61091	-	2455	1	1	0
+spike/7108/00002/ccs	Spodoptera frugiperda	7108	insect	NW_026095741.1	1307	6008	-	4700	1	1	2
+spike/7108/00003/ccs	Spodoptera frugiperda	7108	insect	NW_026095724.1	2466	3936	-	1469	2	0	1
+spike/7108/00004/ccs	Spodoptera frugiperda	7108	insect	NW_026095723.1	42359	45185	+	2825	1	0	1
+spike/7108/00005/ccs	Spodoptera frugiperda	7108	insect	NW_026095724.1	34228	36424	-	2194	0	1	3
+spike/7108/00006/ccs	Spodoptera frugiperda	7108	insect	NW_026095714.1	10960	15586	+	4624	1	2	4
+spike/7108/00007/ccs	Spodoptera frugiperda	7108	insect	NW_026095742.1	8689	9717	+	1029	1	1	0
+spike/7108/00008/ccs	Spodoptera frugiperda	7108	insect	NW_026095719.1	16165	20844	-	4678	1	0	1
+spike/7108/00009/ccs	Spodoptera frugiperda	7108	insect	NW_026095720.1	377	5160	-	4781	0	0	2
+spike/7108/00010/ccs	Spodoptera frugiperda	7108	insect	NW_026095731.1	38333	38877	-	545	0	1	0
+spike/7108/00011/ccs	Spodoptera frugiperda	7108	insect	NW_026095738.1	123641	126035	-	2393	2	1	2
+spike/7108/00012/ccs	Spodoptera frugiperda	7108	insect	NW_026095740.1	15654	18623	+	2968	0	1	2
+spike/7108/00013/ccs	Spodoptera frugiperda	7108	insect	NW_026095725.1	218869	223525	+	4656	4	0	0
+spike/7108/00014/ccs	Spodoptera frugiperda	7108	insect	NW_026095738.1	49426	54366	+	4941	3	1	0
+spike/7108/00015/ccs	Spodoptera frugiperda	7108	insect	NW_026095739.1	3575	8336	+	4760	1	1	2
+spike/7108/00016/ccs	Spodoptera frugiperda	7108	insect	NW_026095731.1	58324	60780	-	2455	1	0	1
+spike/7108/00017/ccs	Spodoptera frugiperda	7108	insect	NW_026095713.1	30065	32106	-	2041	0	1	1
+spike/7108/00018/ccs	Spodoptera frugiperda	7108	insect	NW_026095725.1	60974	62030	-	1056	1	1	1
+spike/7108/00019/ccs	Spodoptera frugiperda	7108	insect	NW_026095728.1	18425	20980	-	2552	1	0	3
+spike/7108/00020/ccs	Spodoptera frugiperda	7108	insect	NW_026095719.1	42306	44709	-	2404	1	1	0
+spike/7108/00021/ccs	Spodoptera frugiperda	7108	insect	NW_026095740.1	3090	5542	-	2455	1	3	0
+spike/7108/00022/ccs	Spodoptera frugiperda	7108	insect	NW_026095725.1	115078	119857	+	4779	2	1	1
+spike/7108/00023/ccs	Spodoptera frugiperda	7108	insect	NW_026095713.1	54144	57120	+	2973	1	0	3
+spike/7108/00024/ccs	Spodoptera frugiperda	7108	insect	NW_026095725.1	210097	212552	-	2456	1	2	1
+spike/46015/00000/ccs	Autographa californica nucleopolyhedrovirus	46015	baculovirus	NC_001623.1	34577	37024	+	2446	0	0	1
+spike/46015/00001/ccs	Autographa californica nucleopolyhedrovirus	46015	baculovirus	NC_001623.1	80453	85233	-	4778	5	1	3
+spike/46015/00002/ccs	Autographa californica nucleopolyhedrovirus	46015	baculovirus	NC_001623.1	41280	43739	+	2458	2	1	2
+spike/46015/00003/ccs	Autographa californica nucleopolyhedrovirus	46015	baculovirus	NC_001623.1	1569	4025	-	2457	2	1	0
+spike/46015/00004/ccs	Autographa californica nucleopolyhedrovirus	46015	baculovirus	NC_001623.1	55632	57847	+	2215	2	2	2
+spike/46015/00005/ccs	Autographa californica nucleopolyhedrovirus	46015	baculovirus	NC_001623.1	78497	85791	+	7294	2	3	3
+spike/46015/00006/ccs	Autographa californica nucleopolyhedrovirus	46015	baculovirus	NC_001623.1	64916	67322	-	2403	2	0	3
+spike/46015/00007/ccs	Autographa californica nucleopolyhedrovirus	46015	baculovirus	NC_001623.1	72607	75058	-	2451	0	1	1
+spike/46015/00008/ccs	Autographa californica nucleopolyhedrovirus	46015	baculovirus	NC_001623.1	128838	131297	-	2456	0	0	3
+spike/46015/00009/ccs	Autographa californica nucleopolyhedrovirus	46015	baculovirus	NC_001623.1	45430	47858	-	2427	2	0	1
+spike/562/00000/ccs	Escherichia coli	562	enterobacteria	NC_000913.3	2364902	2367313	+	2413	1	2	0
+spike/562/00001/ccs	Escherichia coli	562	enterobacteria	NC_000913.3	4428941	4429943	+	1003	1	1	0
+spike/562/00002/ccs	Escherichia coli	562	enterobacteria	NC_000913.3	4548433	4551025	+	2591	2	1	2
+spike/562/00003/ccs	Escherichia coli	562	enterobacteria	NC_000913.3	558114	560567	-	2452	0	0	1
+spike/562/00004/ccs	Escherichia coli	562	enterobacteria	NC_000913.3	2231521	2233480	-	1957	0	0	2
+spike/562/00005/ccs	Escherichia coli	562	enterobacteria	NC_000913.3	4127846	4130303	+	2458	1	1	0
+spike/562/00006/ccs	Escherichia coli	562	enterobacteria	NC_000913.3	4205982	4210523	+	4537	1	0	4
+spike/562/00007/ccs	Escherichia coli	562	enterobacteria	NC_000913.3	1888624	1893383	-	4757	2	1	3
+spike/562/00008/ccs	Escherichia coli	562	enterobacteria	NC_000913.3	1990109	1994888	+	4779	6	2	2
+spike/562/00009/ccs	Escherichia coli	562	enterobacteria	NC_000913.3	2575687	2580605	+	4915	3	1	4
+spike/562/00010/ccs	Escherichia coli	562	enterobacteria	NC_000913.3	3517618	3522310	+	4689	1	0	3
+spike/562/00011/ccs	Escherichia coli	562	enterobacteria	NC_000913.3	1812238	1815472	-	3233	1	2	3
+spike/562/00012/ccs	Escherichia coli	562	enterobacteria	NC_000913.3	842866	845479	+	2611	2	0	2
+spike/562/00013/ccs	Escherichia coli	562	enterobacteria	NC_000913.3	3163936	3166320	+	2383	1	0	1
+spike/562/00014/ccs	Escherichia coli	562	enterobacteria	NC_000913.3	4157039	4161820	-	4781	0	0	0
+spike/3702/00000/ccs	Arabidopsis thaliana	3702	plant	NC_000932.1	147884	150388	+	2504	2	0	0
+spike/3702/00001/ccs	Arabidopsis thaliana	3702	plant	NC_037304.1	327642	332420	-	4780	1	2	0
+spike/3702/00002/ccs	Arabidopsis thaliana	3702	plant	NC_000932.1	137627	140079	+	2451	4	0	1
+spike/3702/00003/ccs	Arabidopsis thaliana	3702	plant	NC_000932.1	43222	48002	-	4778	2	0	2
+spike/3702/00004/ccs	Arabidopsis thaliana	3702	plant	NC_037304.1	248448	250926	+	2479	1	1	0
+spike/3702/00005/ccs	Arabidopsis thaliana	3702	plant	NC_000932.1	91295	93743	+	2447	1	0	1
+spike/3702/00006/ccs	Arabidopsis thaliana	3702	plant	NC_037304.1	9692	12147	+	2455	3	1	1
+spike/3702/00007/ccs	Arabidopsis thaliana	3702	plant	NC_037304.1	292805	297392	+	4587	5	0	0
+spike/3702/00008/ccs	Arabidopsis thaliana	3702	plant	NC_037304.1	349481	354435	+	4953	2	1	2
+spike/3702/00009/ccs	Arabidopsis thaliana	3702	plant	NC_000932.1	97464	98671	-	1205	1	0	2
