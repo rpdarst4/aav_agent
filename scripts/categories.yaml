@@ -1,0 +1,28 @@
+# Contaminant categories for classify_reads.py.
+#
+# Each category is a list of NCBI taxonomy nodes. A read's LCA taxid is assigned
+# to the FIRST category (in this order) whose node appears anywhere in the LCA's
+# lineage, so put specific categories before broad ones (enterobacteria before
+# "other bacteria", etc.).
+#
+# Reads whose LCA is above every node listed here are reported as "ambiguous".
+categories:
+  - name: host (human)            # human DNA the host reference did not cover
+    taxids: [9606]                # Homo sapiens
+  - name: enterobacteria
+    taxids: [543]                 # Enterobacteriaceae
+  - name: soil bacteria           # demo proxy: genera in the demo database
+    taxids: [1386, 286]           # Bacillus, Pseudomonas
+  - name: other bacteria
+    taxids: [2]                   # Bacteria
+  - name: baculovirus             # Sf9 / baculovirus production system
+    taxids: [10442]               # Baculoviridae
+  - name: other virus
+    taxids: [10239]               # Viruses
+  - name: insect
+    taxids: [50557]               # Insecta
+  - name: plant
+    taxids: [33090]               # Viridiplantae
+  - name: other eukaryote
+    taxids: [2759]                # Eukaryota
+default: unclassified

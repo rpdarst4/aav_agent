@@ -30,5 +30,5 @@ organisms:
   - name: Arabidopsis thaliana
     taxid: 3702
     category: plant
-    fasta: fixtures/contaminants/arabidopsis_thaliana.fa
+    fasta: fixtures/contaminants/arabidopsis_chloroplast.fa
     count: 10
