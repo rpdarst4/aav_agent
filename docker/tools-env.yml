@@ -1,0 +1,12 @@
+name: base
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.11
+  - blast
+  - pysam
+  - biopython
+  - pandas
+  - pyyaml
+  - matplotlib-base

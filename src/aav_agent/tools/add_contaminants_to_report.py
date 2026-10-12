@@ -127,6 +127,27 @@ def _table(caption: str, headers: list[str], rows: list[list], aligns: list[str]
     return "\n".join(out)
 
 
+def database_label(summary: dict, override: str = "") -> str:
+    """Label for the database, taken from what blastn recorded unless overridden.
+
+    An explicit override that disagrees with the recorded title is allowed but
+    logged, because a report that names the wrong database is worse than none.
+    """
+    db = summary.get("database") or {}
+    recorded = db.get("db_title") or db.get("db_name") or ""
+    if recorded and db.get("db_date"):
+        recorded_full = f"{recorded}, {db['db_date']}"
+    else:
+        recorded_full = recorded
+    if override:
+        if recorded and override.strip().lower() not in recorded.lower() \
+                and recorded.lower() not in override.strip().lower():
+            logger.warning("--db-label %r differs from the database recorded by blastn (%r); using the label "
+                           "you gave", override, recorded)
+        return override
+    return recorded_full
+
+
 def build_section(
     summary: dict,
     rows: list[dict],
@@ -143,6 +164,7 @@ def build_section(
     context = f"LAAVA could not map {total:,} reads to any supplied reference"
     if laava_total:
         context += f" ({total / laava_total:.2%} of {laava_total:,} reads in the sample)"
+    db_label = database_label(summary, db_label)
     parts.append(
         f"<p>{html.escape(context)}. These reads were compared with a nucleotide "
         f"database{' (' + html.escape(db_label) + ')' if db_label else ''} and assigned to an organism "
@@ -205,7 +227,14 @@ def build_section(
         )
 
     v = summary.get("validation")
+    if show_validation and not v:
+        logger.warning("--show-validation given but the summary has no validation results; "
+                       "re-run classify_reads.py with --truth")
     if show_validation and v:
+        parts.append(
+            "<p><strong>Demonstration data:</strong> this sample includes synthetic reads spiked in from known "
+            "organisms, so the table below compares what was found with what was added.</p>"
+        )
         parts.append(_table(
             "Validation against spiked-in reads (demonstration data)",
             ["Expected", "Observed", "Reads"],
@@ -258,7 +287,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("summary", type=Path, help="Summary JSON from classify_reads.py")
     ap.add_argument("out", type=Path, help="Output HTML (may equal the input to update in place)")
     ap.add_argument("--laava-per-read", type=Path, help="LAAVA per-read TSV(.gz), for sample-wide context")
-    ap.add_argument("--db-label", default="", help="Database description shown in the text, e.g. 'NCBI core_nt'")
+    ap.add_argument("--db-label", default="",
+                    help="Override the database description (default: taken from the blastn provenance file "
+                         "recorded in the summary JSON)")
     ap.add_argument("--show-validation", action="store_true", help="Include the spike-in validation table")
     a = ap.parse_args(argv)
 

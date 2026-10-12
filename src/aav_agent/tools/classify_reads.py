@@ -437,6 +437,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out-tsv", type=Path, help="Per-read classification TSV")
     ap.add_argument("--out-summary", type=Path, help="Summary JSON")
     ap.add_argument("--truth", type=Path, help="Spike-in truth TSV; adds a validation section to the summary")
+    ap.add_argument("--blast-meta", type=Path, default=None,
+                    help="Provenance JSON written by run_blastn.sh (default: <blast>.meta.json if present)")
     d = Params()
     ap.add_argument("--min-pident", type=float, default=d.min_pident)
     ap.add_argument("--min-aln-len", type=int, default=d.min_aln_len)
@@ -463,6 +465,12 @@ def main(argv: list[str] | None = None) -> int:
 
     summary = summarize(rows)
     summary["params"] = vars(params)
+    meta_path = a.blast_meta or Path(str(a.blast) + ".meta.json")
+    if meta_path.exists():
+        summary["database"] = json.loads(meta_path.read_text())
+    else:
+        logger.warning("No BLAST provenance file at %s; the summary will not record which database was used",
+                       meta_path)
     if a.truth:
         with open(a.truth, newline="") as fh:
             summary["validation"] = validate(rows, list(csv.DictReader(fh, delimiter="\t")), tax, cats)
