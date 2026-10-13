@@ -3,7 +3,7 @@ import re
 
 import pytest
 
-from src.aav_agent.tools import add_contaminants_to_report as ac
+from aav_agent.tools import add_contaminants_to_report as ac
 
 REPORT = """<html><body>
 <div id="TOC"><ul>

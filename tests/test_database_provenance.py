@@ -6,8 +6,8 @@ import logging
 
 import yaml
 
-from src.aav_agent.tools import add_contaminants_to_report as ac
-from src.aav_agent.tools import classify_reads as cr
+from aav_agent.tools import add_contaminants_to_report as ac
+from aav_agent.tools import classify_reads as cr
 
 SUMMARY = {
     "total_reads": 1,

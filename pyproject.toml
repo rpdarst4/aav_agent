@@ -1,5 +1,7 @@
 [tool.pytest.ini_options]
-pythonpath = ["."]
+pythonpath = ["src"]
+markers = ["integration: needs Docker, Nextflow and test data (slow)"]
+addopts = "-m 'not integration'"
 
 [tool.poetry]
 name = "aav-agent"

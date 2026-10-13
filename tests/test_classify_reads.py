@@ -7,7 +7,7 @@ import json
 import pytest
 import yaml
 
-from src.aav_agent.tools import classify_reads as cr
+from aav_agent.tools import classify_reads as cr
 
 # (taxid, parent, rank, name)
 NODES = [

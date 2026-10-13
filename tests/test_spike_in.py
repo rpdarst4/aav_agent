@@ -3,7 +3,7 @@ import random
 
 import pytest
 
-from src.aav_agent.tools import spike_in
+from aav_agent.tools import spike_in
 
 
 def _random_seq(rng, n):

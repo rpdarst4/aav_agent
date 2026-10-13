@@ -2,7 +2,7 @@ import tempfile as tf
 
 from Bio.SeqRecord import SeqRecord
 
-from src.aav_agent.tools import extract_unmapped
+from aav_agent.tools import extract_unmapped
 
 
 def test_extract_unmapped():

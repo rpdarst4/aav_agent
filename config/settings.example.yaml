@@ -1,0 +1,32 @@
+# Example settings for the AAV agent tool layer. Relative paths are relative to this file.
+data_dir: ../data                       # runs are created under data/runs/<run_id>/
+laava_dir: ../../laava                  # sibling checkout of formbio/laava
+screen_pipeline: ../pipeline/contaminant_screen.nf
+taxdump_dir: ../data/taxonomy           # nodes.dmp, names.dmp, merged.dmp
+categories: ../scripts/categories.yaml
+
+# Folders the tools may read input files from (reads, FASTAs, BEDs, truth tables).
+# Anything else is refused. Defaults to data_dir and laava_dir if omitted.
+allowed_input_roots:
+  - ../data
+  - ../../laava
+  - ../fixtures
+
+default_database: demo
+databases:
+  demo:
+    dir: ../data/blastdb
+    db_name: demo_contaminants
+    description: Small demo contaminant database (soil bacteria, Sf9/baculovirus, E. coli, Arabidopsis)
+  # nt:
+  #   dir: /mnt/ncbi/blast
+  #   db_name: core_nt
+  #   description: NCBI core_nt (use when available)
+
+nextflow: nextflow
+nxf_syntax_parser: v1                   # drop if your Nextflow accepts LAAVA's config as is
+# nxf_version: "25.10.0"                # pin Nextflow
+laava_container_version: ":latest"
+tools_image: aav-agent-tools:local
+cpus: 4
+memory: 6 GB
