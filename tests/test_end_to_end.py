@@ -27,7 +27,7 @@ from aav_agent.service import AavService
 
 pytestmark = pytest.mark.integration
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = Path(__file__).resolve().parents[1]
 
 
 def _docker_ok() -> bool:

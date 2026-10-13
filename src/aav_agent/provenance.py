@@ -7,8 +7,8 @@ import platform
 import re
 from datetime import datetime, timezone
 
-from src.aav_agent.config import Settings
-from src.aav_agent.runner import CommandRunner
+from aav_agent.config import Settings
+from aav_agent.runner import CommandRunner
 
 
 def utcnow() -> str:

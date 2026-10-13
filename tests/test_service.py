@@ -3,9 +3,9 @@ FakeRunner that creates the files the real pipelines would, and MongoRunStore is
 against a small fake collection."""
 
 import copy
-import gzip
 import hashlib
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -15,14 +15,15 @@ from aav_agent.lims.store import InMemoryRunStore, MongoRunStore
 from aav_agent.runner import CommandResult
 from aav_agent.service import AavService
 from aav_agent.spec import RunSpec, SpecError, validate_run_spec
+from aav_agent.tools import add_contaminants_to_report as report_tools
 
-PER_READ = (
-    "read_id\thas_primary\thas_supp\tassigned_type\tassigned_subtype\teffective_count\treference_label\t"
-    "read_target_overlap\n"
-    "r1\tTrue\tFalse\tssAAV\tfull\t1\tvector\t1.0\n"
-    "r2\tTrue\tFalse\tssAAV\tpartial\t1\tvector\t0.5\n"
-    "r3\tFalse\tFalse\tNA\tNA\t1\t(unmapped)\t0\n"
-)
+# Real LAAVA output (sc.subsample005, 1687 reads, 1 unmapped) and a structural copy of a real LAAVA
+# HTML report. The fake LAAVA below copies these, so the code under test parses genuine output.
+FIXTURES = Path(__file__).parent / "fixtures"
+GOLDEN_BAM = FIXTURES / "sc.subsample005.sort_by_name.bam"
+GOLDEN_PER_READ = FIXTURES / "sc.subsample005.per_read.tsv.gz"
+GOLDEN_REPORT = FIXTURES / "laava_report_skeleton.html"
+GOLDEN_TOTAL_READS, GOLDEN_UNMAPPED = 1687, 1
 
 
 class FakeRunner:
@@ -83,10 +84,9 @@ class FakeRunner:
         sid = json.loads(Path(self._opt(args, "-params-file")).read_text())["sample_unique_id"]
         (out / "alignment").mkdir(parents=True)
         (out / "report").mkdir(parents=True)
-        (out / "alignment" / f"{sid}.sort_by_name.bam").write_bytes(b"BAM")
-        with gzip.open(out / "report" / f"{sid}.per_read.tsv.gz", "wt") as fh:
-            fh.write(PER_READ)
-        (out / "report" / f"{sid}_AAV_report.html").write_text("<html></html>")
+        shutil.copy(GOLDEN_BAM, out / "alignment" / f"{sid}.sort_by_name.bam")
+        shutil.copy(GOLDEN_PER_READ, out / "report" / f"{sid}.per_read.tsv.gz")
+        shutil.copy(GOLDEN_REPORT, out / "report" / f"{sid}_AAV_report.html")
 
     def _fake_screen(self, args):
         if not self.screen_outputs:
@@ -95,7 +95,6 @@ class FakeRunner:
         sid = self._opt(args, "--sample_id")
         (outdir / sid / "report").mkdir(parents=True)
         (outdir / sid / "classification").mkdir(parents=True)
-        (outdir / sid / "report" / f"{sid}_AAV_report.contaminants.html").write_text("<html>screen</html>")
         summary = {
             "total_reads": 1,
             "buckets": {"enterobacteria": {"reads": 1, "read_fraction": 1.0, "bases": 100, "base_fraction": 1.0}},
@@ -106,6 +105,9 @@ class FakeRunner:
             summary["validation"] = {"spiked_reads": 1, "leaked_reads": 0, "correct": 1,
                                      "recovery_of_classifiable": 1.0, "confusion": []}
         (outdir / sid / "classification" / f"{sid}.classified.json").write_text(json.dumps(summary))
+        section = report_tools.build_section(summary, [], show_validation="--truth" in args)
+        spliced = report_tools.splice(GOLDEN_REPORT.read_text(encoding="utf-8"), section)
+        (outdir / sid / "report" / f"{sid}_AAV_report.contaminants.html").write_text(spliced, encoding="utf-8")
 
 
 class FakeCursor:
@@ -274,7 +276,9 @@ def test_name_mismatch_is_a_warning_not_an_error(env):
 def test_run_laava_success(env):
     res = env.svc.run_laava(spec_dict(env))
     assert res["status"] == "succeeded" and res["run_id"] == "run-001" and res["sample_id"] == "ss.spikein"
-    assert res["summary"]["total_reads"] == 3 and res["summary"]["unmapped_reads"] == 1
+    assert res["summary"]["total_reads"] == GOLDEN_TOTAL_READS
+    assert res["summary"]["unmapped_reads"] == GOLDEN_UNMAPPED
+    assert res["summary"]["by_reference_label"]["vector"] == GOLDEN_TOTAL_READS - GOLDEN_UNMAPPED
     assert Path(res["outputs"]["report_html"]).exists()
 
     run_dir = env.settings.runs_dir / "run-001"
@@ -343,7 +347,10 @@ def test_screen_success_and_repeat(env):
     assert res["status"] == "succeeded" and res["screen_id"] == "screen-001" and res["database"] == "demo"
     assert res["buckets"] == {"enterobacteria": 1}
     assert res["database_recorded"]["db_title"] == "AAV demo contaminants"
-    assert Path(res["report_html"]).exists() and "validation" not in res
+    assert "validation" not in res
+    html = Path(res["report_html"]).read_text(encoding="utf-8")
+    assert html.count('id="contaminant-screening" class') == 1
+    assert html.index('id="contaminant-screening"') < html.index('<div id="methods"')  # real report structure
 
     a = env.runner.nextflow_calls()[-1]["args"]
     assert a[a.index("--sample_id") + 1] == "ss.spikein"

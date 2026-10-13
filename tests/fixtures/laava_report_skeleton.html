@@ -1,0 +1,494 @@
+<!-- Structural copy of a real LAAVA report (images, CSS and scripts removed); see scripts/make_report_skeleton.py -->
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+
+
+
+<title>AAV Sequence Analysis</title>
+
+
+
+
+
+<style></style>
+
+<style></style>
+
+<style></style>
+
+
+<style></style>
+
+<style></style>
+
+
+
+
+
+
+
+
+
+
+<style></style>
+
+
+
+<!-- tabsets -->
+
+<style></style>
+
+<!-- code folding -->
+
+
+
+
+</head>
+
+<body>
+
+
+<div class="container-fluid main-container">
+
+
+
+
+<div id="header">
+
+
+
+<h1 class="title toc-ignore">AAV Sequence Analysis</h1>
+<h3 class="subtitle">Sample name: sc.subsample005</h3>
+<h4 class="date">Date: 2026-10-06</h4>
+
+</div>
+
+<div id="TOC">
+<ul>
+<li><a href="#analysis-context" id="toc-analysis-context">Analysis
+context</a></li>
+<li><a href="#read-based-aav-vector-type-classification" id="toc-read-based-aav-vector-type-classification">Read-based AAV vector
+type classification</a>
+<ul>
+<li><a href="#definitions" id="toc-definitions">Definitions</a></li>
+</ul></li>
+<li><a href="#assigned-types-by-read-alignment-characteristics" id="toc-assigned-types-by-read-alignment-characteristics">Assigned types
+by read alignment characteristics</a></li>
+<li><a href="#frequency-of-vector-assigned-types" id="toc-frequency-of-vector-assigned-types">Frequency of vector assigned
+types</a></li>
+<li><a href="#distribution-of-vector-read-lengths-by-assigned-types" id="toc-distribution-of-vector-read-lengths-by-assigned-types">Distribution
+of vector read lengths by assigned types</a></li>
+<li><a href="#assigned-subtypes-detailed-analysis" id="toc-assigned-subtypes-detailed-analysis">Assigned subtypes detailed
+analysis</a>
+<ul>
+<li><a href="#definitions-1" id="toc-definitions-1">Definitions</a></li>
+</ul></li>
+<li><a href="#assigned-types-and-subtypes" id="toc-assigned-types-and-subtypes">Assigned types and subtypes</a>
+<ul>
+<li><a href="#distribution-of-read-length-by-subtype" id="toc-distribution-of-read-length-by-subtype">Distribution of read
+length by subtype</a></li>
+</ul></li>
+<li><a href="#aav-mapping-to-reference-sequence" id="toc-aav-mapping-to-reference-sequence">AAV mapping to reference
+sequence</a>
+<ul>
+<li><a href="#gene-therapy-construct" id="toc-gene-therapy-construct">Gene therapy construct</a></li>
+</ul></li>
+<li><a href="#distribution-of-non-matches-by-reference-position" id="toc-distribution-of-non-matches-by-reference-position">Distribution
+of non-matches by reference position</a></li>
+<li><a href="#flipflop-configurations" id="toc-flipflop-configurations">Flip/flop configurations</a></li>
+<li><a href="#methods" id="toc-methods">Methods</a>
+<ul>
+<li><a href="#citations" id="toc-citations">Citations</a></li>
+</ul></li>
+</ul>
+</div>
+
+<div id="analysis-context" class="section level1">
+<h1>Analysis context</h1>
+<table>
+<thead>
+<tr class="header">
+<th align="center"></th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="center">Sample unique ID</td>
+<td>sc.subsample005</td>
+</tr>
+<tr class="even">
+<td align="center">Sequencing run ID</td>
+<td>m54119U_210730_213233</td>
+</tr>
+<tr class="odd">
+<td align="center">Construct vector type</td>
+<td>scAAV</td>
+</tr>
+</tbody>
+</table>
+<p></p>
+</div>
+<div id="read-based-aav-vector-type-classification" class="section level1">
+<h1>Read-based AAV vector type classification</h1>
+<div id="definitions" class="section level2">
+<h2>Definitions</h2>
+<table>
+<caption>Reference label definitions.</caption>
+<colgroup>
+<col width="26%" />
+<col width="73%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="center">Reference Label</th>
+<th>Definition</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="center">vector</td>
+<td>Read originates from the vector plasmid.</td>
+</tr>
+<tr class="even">
+<td align="center">repcap</td>
+<td>Read originates from the RepCap plasmid. The Rep gene encodes four
+proteins (Rep78, Rep68, Rep52, and Rep40), which are required for viral
+genome replication and packaging, while Cap expression gives rise to the
+viral capsid proteins (VP; VP1/VP2/VP3), which form the outer capsid
+shell that protects the viral genome, as well as being actively involved
+in cell binding and internalization.</td>
+</tr>
+<tr class="odd">
+<td align="center">helper</td>
+<td>Read originates from the helper plasmid. In addition to Rep and Cap,
+AAV requires a helper plasmid containing genes from adenovirus. These
+genes (E4, E2a and VA) mediate AAV replication.</td>
+</tr>
+<tr class="even">
+<td align="center">host</td>
+<td>Read originates from the host genome that is given (e.g. hg38,
+CHM13).</td>
+</tr>
+<tr class="odd">
+<td align="center">chimeric-vector</td>
+<td>One part of the read aligns to the vector plasmid, while another
+part of the same read aligns to a different reference sequence.</td>
+</tr>
+<tr class="even">
+<td align="center">chimeric-nonvector</td>
+<td>The read consists of fragments that align to two or more different
+reference sequences, neither of which is the vector plasmid.</td>
+</tr>
+</tbody>
+</table>
+<table>
+<caption>Assigned type definitions.</caption>
+<colgroup>
+<col width="20%" />
+<col width="80%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="center">Assigned Type</th>
+<th>Definition</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="center">ssAAV</td>
+<td>Single-stranded AAV vector genome where the resulting DNA template
+is expected to be single-stranded, as opposed to self-complementary. A
+sequencing read is inferred as ssAAV if it has a single alignment to the
+vector plasmid’s ITR-to-ITR payload region and no complementary
+supplemental alignment.</td>
+</tr>
+<tr class="even">
+<td align="center">scAAV</td>
+<td>Self-complementary AAV vector genome where one half of the payload
+region is a reverse complement of the other, resulting in an
+intramolecular double-stranded DNA template. A sequencing read is
+inferred as scAAV if it aligns to the payload region in both forward (+)
+and reverse (-) read directions.</td>
+</tr>
+<tr class="odd">
+<td align="center">backbone</td>
+<td>Read aligns to the vector plasmid sequence but fully outside of the
+annotated ITR-to-ITR region, indicating that the sequence fragment
+originated solely from the plasmid backbone.</td>
+</tr>
+<tr class="even">
+<td align="center">other-vector</td>
+<td>Read consists of a fragment mapping to the vector but with
+characteristics other than those listed above.</td>
+</tr>
+</tbody>
+</table>
+<table>
+<caption>Count and Frequency definitions.</caption>
+<colgroup>
+<col width="20%" />
+<col width="80%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="center">Term</th>
+<th>Definition</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="center">Counts</td>
+<td>Refers to the total number of reads including lambda</td>
+</tr>
+<tr class="even">
+<td align="center">Counts Excluding Lambda</td>
+<td>Refers to the total number of reads excluding lambda</td>
+</tr>
+<tr class="odd">
+<td align="center">Frequency (%, Excluding Lambda)</td>
+<td>Frequency of reads excluding lambda</td>
+</tr>
+<tr class="even">
+<td align="center">GOI Vector Frequency (%)</td>
+<td>Refers to the frequency of reads that align to the GOI transfer
+vector; excludes reads that align to contaminants (chimeric vector,
+chimeric non-vector, pRepCap, pHelper, host and unmapped) and
+lambda</td>
+</tr>
+</tbody>
+</table>
+<p><br /></p>
+<div class="float">
+<img role="img" aria-label="Single-stranded AAV types (ssAAV). ssAAV reads are expected to have a single (forward) alignment to the vector genome. “ssAAV full” reads cover the target region from left ITR to right ITR. “ssAAV left-partial” contain the left ITR but are missing the right ITR. “scAAV vector+backbone” reads overlap both the ITR-to-ITR region and the plasmid backbone, beyond the ITR." src="data:image/png;base64," alt="Single-stranded AAV types (ssAAV). ssAAV reads are expected to have a single (forward) alignment to the vector genome. “ssAAV full” reads cover the target region from left ITR to right ITR. “ssAAV left-partial” contain the left ITR but are missing the right ITR. “scAAV vector+backbone” reads overlap both the ITR-to-ITR region and the plasmid backbone, beyond the ITR." />
+<div class="figcaption">Single-stranded AAV types (ssAAV). ssAAV reads
+are expected to have a single (forward) alignment to the vector genome.
+“ssAAV full” reads cover the target region from left ITR to right ITR.
+“ssAAV left-partial” contain the left ITR but are missing the right ITR.
+“scAAV vector+backbone” reads overlap both the ITR-to-ITR region and the
+plasmid backbone, beyond the ITR.</div>
+</div>
+<p><br /></p>
+<div class="float">
+<img role="img" aria-label="Self-complementary AAV types (scAAV). scAAV reads are expected to have both forward and reverse-complementary alignments to the vector genome. The definitions of full, partial, and backbone reads are the same as in ssAAV." src="data:image/png;base64," alt="Self-complementary AAV types (scAAV). scAAV reads are expected to have both forward and reverse-complementary alignments to the vector genome. The definitions of full, partial, and backbone reads are the same as in ssAAV." />
+<div class="figcaption">Self-complementary AAV types (scAAV). scAAV
+reads are expected to have both forward and reverse-complementary
+alignments to the vector genome. The definitions of full, partial, and
+backbone reads are the same as in ssAAV.</div>
+</div>
+<p></p>
+</div>
+</div>
+<div id="assigned-types-by-read-alignment-characteristics" class="section level1">
+<h1>Assigned types by read alignment characteristics</h1>
+<p>In the table below, the distribution of reads mapping to the vector,
+and other contaminants are described. The table includes the counts
+(includes lambda), counts excluding lambda and the frequency excluding
+lambda.</p>
+<p>Note: If lambda spike-in was not performed as part of the library
+prep process, the values in the counts and counts excluding lambda
+columns will be identical.</p>
+<div class="tabwid"><style></style><table data-quarto-disable-processing="true" class="cl-2c563d24"><thead><tr style="overflow-wrap:break-word;"><th class="cl-2c501174"><p class="cl-2c4fe884"><span class="cl-2c4bd05a">Mapped Reference</span></p></th><th class="cl-2c501174"><p class="cl-2c4fe884"><span class="cl-2c4bd05a">Assigned Type</span></p></th><th class="cl-2c5011d8"><p class="cl-2c4fe8e8"><span class="cl-2c4bd05a">Counts</span></p></th><th class="cl-2c5011d8"><p class="cl-2c4fe8e8"><span class="cl-2c4bd05a">Counts Excluding Lambda</span></p></th><th class="cl-2c5011d8"><p class="cl-2c4fe8e8"><span class="cl-2c4bd05a">Frequency (%, Excluding Lambda)</span></p></th></tr></thead><tbody><tr style="overflow-wrap:break-word;"><td class="cl-2c501228"><p class="cl-2c4fe884"><span class="cl-2c4bd12c">vector</span></p></td><td class="cl-2c501228"><p class="cl-2c4fe884"><span class="cl-2c4bd12c">scAAV</span></p></td><td class="cl-2c501282"><p class="cl-2c4fe8e8"><span class="cl-2c4bd12c">1,613</span></p></td><td class="cl-2c501282"><p class="cl-2c4fe8e8"><span class="cl-2c4bd12c">1,613</span></p></td><td class="cl-2c501282"><p class="cl-2c4fe8e8"><span class="cl-2c4bd12c">94.60</span></p></td></tr><tr style="overflow-wrap:break-word;"><td class="cl-2c5012d2"><p class="cl-2c4fe884"><span class="cl-2c4bd12c">vector</span></p></td><td class="cl-2c5012d2"><p class="cl-2c4fe884"><span class="cl-2c4bd12c">other-vector</span></p></td><td class="cl-2c501322"><p class="cl-2c4fe8e8"><span class="cl-2c4bd12c">89</span></p></td><td class="cl-2c501322"><p class="cl-2c4fe8e8"><span class="cl-2c4bd12c">89</span></p></td><td class="cl-2c501322"><p class="cl-2c4fe8e8"><span class="cl-2c4bd12c">5.22</span></p></td></tr><tr style="overflow-wrap:break-word;"><td class="cl-2c5012d2"><p class="cl-2c4fe884"><span class="cl-2c4bd12c">vector</span></p></td><td class="cl-2c5012d2"><p class="cl-2c4fe884"><span class="cl-2c4bd12c">backbone</span></p></td><td class="cl-2c501322"><p class="cl-2c4fe8e8"><span class="cl-2c4bd12c">1</span></p></td><td class="cl-2c501322"><p class="cl-2c4fe8e8"><span class="cl-2c4bd12c">1</span></p></td><td class="cl-2c501322"><p class="cl-2c4fe8e8"><span class="cl-2c4bd12c">0.06</span></p></td></tr><tr style="overflow-wrap:break-word;"><td class="cl-2c5012d2"><p class="cl-2c4fe884"><span class="cl-2c4bd12c">(unmapped)</span></p></td><td class="cl-2c5012d2"><p class="cl-2c4fe884"><span class="cl-2c4bd12c"></span></p></td><td class="cl-2c501322"><p class="cl-2c4fe8e8"><span class="cl-2c4bd12c">2</span></p></td><td class="cl-2c501322"><p class="cl-2c4fe8e8"><span class="cl-2c4bd12c">2</span></p></td><td class="cl-2c501322"><p class="cl-2c4fe8e8"><span class="cl-2c4bd12c">0.12</span></p></td></tr><tr style="overflow-wrap:break-word;"><td class="cl-2c50137c"><p class="cl-2c4fe884"><span class="cl-2c4bd12c">Total</span></p></td><td class="cl-2c50137c"><p class="cl-2c4fe884"><span class="cl-2c4bd12c"></span></p></td><td class="cl-2c5013cc"><p class="cl-2c4fe8e8"><span class="cl-2c4bd12c">1,705</span></p></td><td class="cl-2c5013cc"><p class="cl-2c4fe8e8"><span class="cl-2c4bd12c">1,705</span></p></td><td class="cl-2c5013cc"><p class="cl-2c4fe8e8"><span class="cl-2c4bd12c">100.00</span></p></td></tr></tbody></table></div>
+<p><img role="img" src="data:image/png;base64," width="80%" style="display: block; margin: auto;" /><img role="img" src="data:image/png;base64," width="80%" style="display: block; margin: auto;" /></p>
+</div>
+<div id="frequency-of-vector-assigned-types" class="section level1">
+<h1>Frequency of vector assigned types</h1>
+<p>In the table below, the distribution of reads mapping to the vector,
+other-vector and backbone are described. The table includes the counts,
+frequency excluding lambda, and the GOI vector frequency.</p>
+<div class="tabwid"><style></style><table data-quarto-disable-processing="true" class="cl-2d9c86ca"><thead><tr style="overflow-wrap:break-word;"><th class="cl-2d98ded0"><p class="cl-2d98c0ee"><span class="cl-2d95ef4a">Assigned Type</span></p></th><th class="cl-2d98df20"><p class="cl-2d98c13e"><span class="cl-2d95ef4a">Counts</span></p></th><th class="cl-2d98df20"><p class="cl-2d98c13e"><span class="cl-2d95ef4a">Frequency (%, Excluding Lambda)</span></p></th><th class="cl-2d98df20"><p class="cl-2d98c13e"><span class="cl-2d95ef4a">GOI Vector Frequency (%)</span></p></th></tr></thead><tbody><tr style="overflow-wrap:break-word;"><td class="cl-2d98df66"><p class="cl-2d98c0ee"><span class="cl-2d95efae">scAAV</span></p></td><td class="cl-2d98dfac"><p class="cl-2d98c13e"><span class="cl-2d95efae">1,613</span></p></td><td class="cl-2d98dfac"><p class="cl-2d98c13e"><span class="cl-2d95efae">94.60</span></p></td><td class="cl-2d98dfac"><p class="cl-2d98c13e"><span class="cl-2d95efae">94.72</span></p></td></tr><tr style="overflow-wrap:break-word;"><td class="cl-2d98dff2"><p class="cl-2d98c0ee"><span class="cl-2d95efae">other-vector</span></p></td><td class="cl-2d98e02e"><p class="cl-2d98c13e"><span class="cl-2d95efae">89</span></p></td><td class="cl-2d98e02e"><p class="cl-2d98c13e"><span class="cl-2d95efae">5.22</span></p></td><td class="cl-2d98e02e"><p class="cl-2d98c13e"><span class="cl-2d95efae">5.23</span></p></td></tr><tr style="overflow-wrap:break-word;"><td class="cl-2d98dff2"><p class="cl-2d98c0ee"><span class="cl-2d95efae">backbone</span></p></td><td class="cl-2d98e02e"><p class="cl-2d98c13e"><span class="cl-2d95efae">1</span></p></td><td class="cl-2d98e02e"><p class="cl-2d98c13e"><span class="cl-2d95efae">0.06</span></p></td><td class="cl-2d98e02e"><p class="cl-2d98c13e"><span class="cl-2d95efae">0.06</span></p></td></tr><tr style="overflow-wrap:break-word;"><td class="cl-2d98e074"><p class="cl-2d98c0ee"><span class="cl-2d95efae">Total</span></p></td><td class="cl-2d98e0ba"><p class="cl-2d98c13e"><span class="cl-2d95efae">1,703</span></p></td><td class="cl-2d98e0ba"><p class="cl-2d98c13e"><span class="cl-2d95efae">99.88</span></p></td><td class="cl-2d98e0ba"><p class="cl-2d98c13e"><span class="cl-2d95efae">100.01</span></p></td></tr></tbody></table></div>
+</div>
+<div id="distribution-of-vector-read-lengths-by-assigned-types" class="section level1">
+<h1>Distribution of vector read lengths by assigned types</h1>
+<p><img role="img" src="data:image/png;base64," width="80%" style="display: block; margin: auto;" /></p>
+</div>
+<div id="assigned-subtypes-detailed-analysis" class="section level1">
+<h1>Assigned subtypes detailed analysis</h1>
+<div id="definitions-1" class="section level2">
+<h2>Definitions</h2>
+<table>
+<caption>Assigned subtype definitions for self-complementary input
+vector.</caption>
+<colgroup>
+<col width="16%" />
+<col width="20%" />
+<col width="62%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="center">Assigned Type</th>
+<th align="center">Assigned Subtype</th>
+<th>Definition</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="center">scAAV</td>
+<td align="center">full</td>
+<td>Read aligns to a fragment of the vector originating from the left
+(upstream) ITR and ending at the right (downstream) ITR of the
+vector.</td>
+</tr>
+<tr class="even">
+<td align="center">scAAV</td>
+<td align="center">full-gap</td>
+<td>Read aligns to the vector ITR-to-ITR region, as with “full”, but
+with a significant number of gaps in the alignment between the
+ITRs.</td>
+</tr>
+<tr class="odd">
+<td align="center">scAAV</td>
+<td align="center">read-through</td>
+<td>Read aligns to a fragment including the vector as well as plasmid
+backbone sequence. May imply read-through beyond the right ITR, or
+reverse packaging if the alignment is to only the left ITR and
+backbone.</td>
+</tr>
+<tr class="even">
+<td align="center">scAAV</td>
+<td align="center">partial</td>
+<td>Read aligns to a fragment of the vector originating from within the
+ITR sequences.</td>
+</tr>
+<tr class="odd">
+<td align="center">scAAV</td>
+<td align="center">itr-partial</td>
+<td>Read aligns only to a single-stranded fragment of the vector
+originating from the left ITR while not covering the right ITR.</td>
+</tr>
+<tr class="even">
+<td align="center">scAAV</td>
+<td align="center">snapback</td>
+<td>Read consists of a double-stranded, sub-genomic fragment including
+only the left ITR and read alignments in both (+) and (-) strands.</td>
+</tr>
+<tr class="odd">
+<td align="center">other-vector</td>
+<td align="center">tandem</td>
+<td>Read has two or more overlapping alignments on the same strand, but
+none on the reverse strand, indicating tandem duplication of the same
+region.</td>
+</tr>
+<tr class="even">
+<td align="center">other-vector</td>
+<td align="center">complex</td>
+<td>Read aligns to a double-stranded fragment with asymmetrical and/or
+multiple alignments on the (+) and (-) strands.</td>
+</tr>
+<tr class="odd">
+<td align="center">other-vector</td>
+<td align="center">unclassified</td>
+<td>Read alignment does not match any of the above orientations.</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div id="assigned-types-and-subtypes" class="section level1">
+<h1>Assigned types and subtypes</h1>
+<p>In the table below, the distribution of reads mapping to the various
+assigned subtypes are described. The table includes the counts,
+frequency excluding lambda, and the GOI vector frequency.</p>
+<div class="tabwid"><style></style><table data-quarto-disable-processing="true" class="cl-2dea2b14"><thead><tr style="overflow-wrap:break-word;"><th class="cl-2de5d8c0"><p class="cl-2de5b12e"><span class="cl-2de244a8">Assigned Type</span></p></th><th class="cl-2de5d8c0"><p class="cl-2de5b12e"><span class="cl-2de244a8">Assigned Subtype</span></p></th><th class="cl-2de5d91a"><p class="cl-2de5b192"><span class="cl-2de244a8">Counts</span></p></th><th class="cl-2de5d91a"><p class="cl-2de5b192"><span class="cl-2de244a8">Frequency (%, Excluding Lambda)</span></p></th><th class="cl-2de5d91a"><p class="cl-2de5b192"><span class="cl-2de244a8">GOI Vector Frequency (%)</span></p></th></tr></thead><tbody><tr style="overflow-wrap:break-word;"><td class="cl-2de5d974"><p class="cl-2de5b12e"><span class="cl-2de24502">scAAV</span></p></td><td class="cl-2de5d974"><p class="cl-2de5b12e"><span class="cl-2de24502">full</span></p></td><td class="cl-2de5d9ce"><p class="cl-2de5b192"><span class="cl-2de24502">1,598</span></p></td><td class="cl-2de5d9ce"><p class="cl-2de5b192"><span class="cl-2de24502">93.72</span></p></td><td class="cl-2de5d9ce"><p class="cl-2de5b192"><span class="cl-2de24502">93.83</span></p></td></tr><tr style="overflow-wrap:break-word;"><td class="cl-2de5da1e"><p class="cl-2de5b12e"><span class="cl-2de24502">scAAV</span></p></td><td class="cl-2de5da1e"><p class="cl-2de5b12e"><span class="cl-2de24502">snapback</span></p></td><td class="cl-2de5da6e"><p class="cl-2de5b192"><span class="cl-2de24502">10</span></p></td><td class="cl-2de5da6e"><p class="cl-2de5b192"><span class="cl-2de24502">0.59</span></p></td><td class="cl-2de5da6e"><p class="cl-2de5b192"><span class="cl-2de24502">0.59</span></p></td></tr><tr style="overflow-wrap:break-word;"><td class="cl-2de5da1e"><p class="cl-2de5b12e"><span class="cl-2de24502">scAAV</span></p></td><td class="cl-2de5da1e"><p class="cl-2de5b12e"><span class="cl-2de24502">itr-partial</span></p></td><td class="cl-2de5da6e"><p class="cl-2de5b192"><span class="cl-2de24502">2</span></p></td><td class="cl-2de5da6e"><p class="cl-2de5b192"><span class="cl-2de24502">0.12</span></p></td><td class="cl-2de5da6e"><p class="cl-2de5b192"><span class="cl-2de24502">0.12</span></p></td></tr><tr style="overflow-wrap:break-word;"><td class="cl-2de5da1e"><p class="cl-2de5b12e"><span class="cl-2de24502">scAAV</span></p></td><td class="cl-2de5da1e"><p class="cl-2de5b12e"><span class="cl-2de24502">read-through</span></p></td><td class="cl-2de5da6e"><p class="cl-2de5b192"><span class="cl-2de24502">2</span></p></td><td class="cl-2de5da6e"><p class="cl-2de5b192"><span class="cl-2de24502">0.12</span></p></td><td class="cl-2de5da6e"><p class="cl-2de5b192"><span class="cl-2de24502">0.12</span></p></td></tr><tr style="overflow-wrap:break-word;"><td class="cl-2de5da1e"><p class="cl-2de5b12e"><span class="cl-2de24502">scAAV</span></p></td><td class="cl-2de5da1e"><p class="cl-2de5b12e"><span class="cl-2de24502">partial</span></p></td><td class="cl-2de5da6e"><p class="cl-2de5b192"><span class="cl-2de24502">1</span></p></td><td class="cl-2de5da6e"><p class="cl-2de5b192"><span class="cl-2de24502">0.06</span></p></td><td class="cl-2de5da6e"><p class="cl-2de5b192"><span class="cl-2de24502">0.06</span></p></td></tr><tr style="overflow-wrap:break-word;"><td class="cl-2de5da1e"><p class="cl-2de5b12e"><span class="cl-2de24502">other-vector</span></p></td><td class="cl-2de5da1e"><p class="cl-2de5b12e"><span class="cl-2de24502">unclassified</span></p></td><td class="cl-2de5da6e"><p class="cl-2de5b192"><span class="cl-2de24502">74</span></p></td><td class="cl-2de5da6e"><p class="cl-2de5b192"><span class="cl-2de24502">4.34</span></p></td><td class="cl-2de5da6e"><p class="cl-2de5b192"><span class="cl-2de24502">4.35</span></p></td></tr><tr style="overflow-wrap:break-word;"><td class="cl-2de5da1e"><p class="cl-2de5b12e"><span class="cl-2de24502">other-vector</span></p></td><td class="cl-2de5da1e"><p class="cl-2de5b12e"><span class="cl-2de24502">complex</span></p></td><td class="cl-2de5da6e"><p class="cl-2de5b192"><span class="cl-2de24502">10</span></p></td><td class="cl-2de5da6e"><p class="cl-2de5b192"><span class="cl-2de24502">0.59</span></p></td><td class="cl-2de5da6e"><p class="cl-2de5b192"><span class="cl-2de24502">0.59</span></p></td></tr><tr style="overflow-wrap:break-word;"><td class="cl-2de5da1e"><p class="cl-2de5b12e"><span class="cl-2de24502">other-vector</span></p></td><td class="cl-2de5da1e"><p class="cl-2de5b12e"><span class="cl-2de24502">tandem</span></p></td><td class="cl-2de5da6e"><p class="cl-2de5b192"><span class="cl-2de24502">5</span></p></td><td class="cl-2de5da6e"><p class="cl-2de5b192"><span class="cl-2de24502">0.29</span></p></td><td class="cl-2de5da6e"><p class="cl-2de5b192"><span class="cl-2de24502">0.29</span></p></td></tr><tr style="overflow-wrap:break-word;"><td class="cl-2de5da1e"><p class="cl-2de5b12e"><span class="cl-2de24502">backbone</span></p></td><td class="cl-2de5da1e"><p class="cl-2de5b12e"><span class="cl-2de24502">backbone</span></p></td><td class="cl-2de5da6e"><p class="cl-2de5b192"><span class="cl-2de24502">1</span></p></td><td class="cl-2de5da6e"><p class="cl-2de5b192"><span class="cl-2de24502">0.06</span></p></td><td class="cl-2de5da6e"><p class="cl-2de5b192"><span class="cl-2de24502">0.06</span></p></td></tr><tr style="overflow-wrap:break-word;"><td class="cl-2de5dac8"><p class="cl-2de5b12e"><span class="cl-2de24502">Total</span></p></td><td class="cl-2de5dac8"><p class="cl-2de5b12e"><span class="cl-2de24502"></span></p></td><td class="cl-2de5db18"><p class="cl-2de5b192"><span class="cl-2de24502">1,703</span></p></td><td class="cl-2de5db18"><p class="cl-2de5b192"><span class="cl-2de24502">99.89</span></p></td><td class="cl-2de5db18"><p class="cl-2de5b192"><span class="cl-2de24502">100.01</span></p></td></tr></tbody></table></div>
+<div id="distribution-of-read-length-by-subtype" class="section level2">
+<h2>Distribution of read length by subtype</h2>
+<p><img role="img" src="data:image/png;base64," width="80%" style="display: block; margin: auto;" /></p>
+</div>
+</div>
+<div id="aav-mapping-to-reference-sequence" class="section level1">
+<h1>AAV mapping to reference sequence</h1>
+<div id="gene-therapy-construct" class="section level2">
+<h2>Gene therapy construct</h2>
+<p><img role="img" src="data:image/png;base64," width="80%" style="display: block; margin: auto;" /><img role="img" src="data:image/png;base64," width="80%" style="display: block; margin: auto;" /><img role="img" src="data:image/png;base64," width="80%" style="display: block; margin: auto;" /></p>
+<!-- optional RepCap section -->
+</div>
+</div>
+<div id="distribution-of-non-matches-by-reference-position" class="section level1">
+<h1>Distribution of non-matches by reference position</h1>
+<p><img role="img" src="data:image/png;base64," width="80%" style="display: block; margin: auto;" /><img role="img" src="data:image/png;base64," width="80%" style="display: block; margin: auto;" /><img role="img" src="data:image/png;base64," width="80%" style="display: block; margin: auto;" /></p>
+</div>
+<div id="flipflop-configurations" class="section level1">
+<h1>Flip/flop configurations</h1>
+<table>
+<colgroup>
+<col width="20%" />
+<col width="80%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="center">Term</th>
+<th>Definition</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="center">Flip/Flop</td>
+<td>One ITR is formed by two palindromic arms, called B–B’ and C–C’,
+embedded in a larger one, A–A’. The order of these palindromic sequences
+defines the flip or flop orientation of the ITR. (<a href="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5655423/">Read
+more</a>)</td>
+</tr>
+</tbody>
+</table>
+<p>No flip/flop analysis results available to display.</p>
+<p></p>
+</div>
+<div id="methods" class="section level1">
+<h1>Methods</h1>
+<p>This report was generated by an automated analysis of long-read
+sequencing data from adeno-associated virus (AAV) products. The
+sequencing data should be from the PacBio sequencer run in AAV mode, or
+equivalent circular consensus sequencing (CCS) reads (Travers et al.,
+2010).</p>
+<p>In this analysis, reads are aligned to the given AAV, packaging, and
+host reference sequences using Minimap2 (Li, 2018). The reference
+sequences for each primary alignment and its orientation are counted and
+summarized to assign read type classifications, including vector,
+non-vector, and chimeric reads. For reads assigned to the AAV vector,
+the primary alignment coordinates are compared to the annotated vector
+region in the reference sequence, which comprises the left and right
+ITRs and the genomic region between them, to assign each read to a
+subtype classification. Sequence variants relative to the vector
+reference sequence are determined directly from each read’s alignment,
+specifically the CIGAR string indicating insertions, deletions,
+mismatches, and gaps.</p>
+<div id="citations" class="section level2">
+<h2>Citations</h2>
+<ol style="list-style-type: decimal">
+<li>Travers, K. J., Chin, C.-S., Rank, D. R., Eid, J. S. &amp; Turner,
+S. W. A flexible and efficient template format for circular consensus
+sequencing and SNP detection. Nucleic Acids Research 38, e159–e159
+(2010).</li>
+<li>Li, H. Minimap2: Pairwise alignment for nucleotide sequences.
+Bioinformatics 34, 3094–3100 (2018).</li>
+</ol>
+</div>
+</div>
+
+
+
+
+</div>
+
+
+
+<!-- tabsets -->
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+
+
+</body>
+</html>

@@ -12,7 +12,7 @@ import re
 from dataclasses import dataclass, fields
 from pathlib import Path
 
-from src.aav_agent.config import PathNotAllowed, Settings
+from aav_agent.config import PathNotAllowed, Settings
 
 VECTOR_TYPES = ("ss", "sc", "unspecified")
 READ_EXTENSIONS = (".bam", ".fastq", ".fastq.gz", ".fq", ".fq.gz")
