@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 import copy
+import json
+import os
+import re
+import threading
+from pathlib import Path
 from typing import Protocol
 
 
@@ -49,6 +54,85 @@ class InMemoryRunStore:
         docs = sorted((d for d in self._screens.values() if d["run_id"] == run_id),
                       key=lambda d: d["created_utc"])
         return [copy.deepcopy(d) for d in docs]
+
+
+class FileRunStore:
+    """One JSON file per document under root/runs and root/screens.
+
+    A database-free store that survives restarts, which the stdio MCP server needs (every launch is a
+    new process). Writes are atomic (temp file + rename). Suitable for one server process.
+    """
+
+    _SAFE_ID = re.compile(r"^[A-Za-z0-9._:-]+$")
+
+    def __init__(self, root: str | Path) -> None:
+        self.root = Path(root)
+        self._runs = self.root / "runs"
+        self._screens = self.root / "screens"
+        self._runs.mkdir(parents=True, exist_ok=True)
+        self._screens.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.RLock()
+
+    def _path(self, folder: Path, doc_id: str) -> Path:
+        if not self._SAFE_ID.match(doc_id) or doc_id in (".", ".."):
+            raise ValueError(f"unsafe document id: {doc_id!r}")
+        return folder / (doc_id.replace(":", "__") + ".json")
+
+    def _write(self, path: Path, doc: dict) -> None:
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(json.dumps(doc, indent=2))
+        os.replace(tmp, path)
+
+    def _read(self, path: Path) -> dict | None:
+        try:
+            return json.loads(path.read_text())
+        except FileNotFoundError:
+            return None
+
+    def _all(self, folder: Path) -> list[dict]:
+        return [json.loads(p.read_text()) for p in sorted(folder.glob("*.json"))]
+
+    def create_run(self, doc: dict) -> None:
+        with self._lock:
+            path = self._path(self._runs, doc["_id"])
+            if path.exists():
+                raise ValueError(f"run {doc['_id']} already exists")
+            self._write(path, doc)
+
+    def update_run(self, run_id: str, fields: dict) -> None:
+        with self._lock:
+            path = self._path(self._runs, run_id)
+            doc = self._read(path)
+            if doc is None:
+                raise KeyError(run_id)
+            doc.update(fields)
+            self._write(path, doc)
+
+    def get_run(self, run_id: str) -> dict | None:
+        with self._lock:
+            return self._read(self._path(self._runs, run_id))
+
+    def list_runs(self, limit: int = 20) -> list[dict]:
+        with self._lock:
+            return sorted(self._all(self._runs), key=lambda d: d["created_utc"], reverse=True)[:limit]
+
+    def create_screen(self, doc: dict) -> None:
+        with self._lock:
+            self._write(self._path(self._screens, doc["_id"]), doc)
+
+    def update_screen(self, doc_id: str, fields: dict) -> None:
+        with self._lock:
+            path = self._path(self._screens, doc_id)
+            doc = self._read(path)
+            if doc is None:
+                raise KeyError(doc_id)
+            doc.update(fields)
+            self._write(path, doc)
+
+    def list_screens(self, run_id: str) -> list[dict]:
+        with self._lock:
+            docs = [d for d in self._all(self._screens) if d["run_id"] == run_id]
+        return sorted(docs, key=lambda d: d["created_utc"])
 
 
 class MongoRunStore:

@@ -6,12 +6,14 @@ import copy
 import hashlib
 import json
 import shutil
+import threading
+import time
 from pathlib import Path
 
 import pytest
 
 from aav_agent.config import DatabaseConfig, PathNotAllowed, Settings
-from aav_agent.lims.store import InMemoryRunStore, MongoRunStore
+from aav_agent.lims.store import FileRunStore, InMemoryRunStore, MongoRunStore
 from aav_agent.runner import CommandResult
 from aav_agent.service import AavService
 from aav_agent.spec import RunSpec, SpecError, validate_run_spec
@@ -38,6 +40,10 @@ class FakeRunner:
         self.git_ok = git_ok
         self.docker_ok = docker_ok
         self.raise_on_nextflow = raise_on_nextflow
+        self.hold = None  # a threading.Event: pipeline runs block until it is set
+        self.active = 0
+        self.max_active = 0
+        self._count_lock = threading.Lock()
 
     def nextflow_calls(self):
         return [c for c in self.calls if c["args"][0] == "nextflow" and "run" in c["args"]]
@@ -62,16 +68,28 @@ class FakeRunner:
         if exe == "nextflow" and "-version" in args:
             return CommandResult(0, "\n  N E X T F L O W\n  version 25.10.0 build 5000\n")
         if exe == "nextflow" and "run" in args:
-            if self.raise_on_nextflow:
-                raise self.raise_on_nextflow
-            if log_path is not None:
-                log_path.parent.mkdir(parents=True, exist_ok=True)
-                log_path.write_text("line 1\nline 2\nsomething broke\n" if self.nf_returncode else "ok\n")
-            if self.nf_returncode == 0:
-                script = next(a for a in args if a.endswith(".nf"))
-                (self._fake_laava if script.endswith("main.nf") else self._fake_screen)(args)
-            return CommandResult(self.nf_returncode)
+            with self._count_lock:
+                self.active += 1
+                self.max_active = max(self.max_active, self.active)
+            try:
+                if self.hold is not None:
+                    self.hold.wait(timeout=10)
+                return self._run_pipeline(args, log_path)
+            finally:
+                with self._count_lock:
+                    self.active -= 1
         raise AssertionError(f"unexpected command: {args}")
+
+    def _run_pipeline(self, args, log_path):
+        if self.raise_on_nextflow:
+            raise self.raise_on_nextflow
+        if log_path is not None:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_path.write_text("line 1\nline 2\nsomething broke\n" if self.nf_returncode else "ok\n")
+        if self.nf_returncode == 0:
+            script = next(a for a in args if a.endswith(".nf"))
+            (self._fake_laava if script.endswith("main.nf") else self._fake_screen)(args)
+        return CommandResult(self.nf_returncode)
 
     @staticmethod
     def _opt(args, name):
@@ -154,9 +172,13 @@ class FakeMongoDB(dict):
         return self[name]
 
 
-@pytest.fixture(params=["memory", "mongo"])
-def store(request):
-    return InMemoryRunStore() if request.param == "memory" else MongoRunStore(FakeMongoDB())
+@pytest.fixture(params=["memory", "mongo", "file"])
+def store(request, tmp_path):
+    if request.param == "memory":
+        return InMemoryRunStore()
+    if request.param == "mongo":
+        return MongoRunStore(FakeMongoDB())
+    return FileRunStore(tmp_path / "lims")
 
 
 @pytest.fixture
@@ -454,3 +476,114 @@ def test_settings_from_yaml_resolves_relative_paths(tmp_path):
     with pytest.raises(ValueError):
         Settings(data_dir=tmp_path, laava_dir=tmp_path, screen_pipeline=tmp_path, taxdump_dir=tmp_path,
                  categories=tmp_path, databases={}, default_database="missing")
+
+
+# ---------------------------------------------------------------- background jobs
+
+
+def _wait_until(pred, timeout=5.0):
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        if pred():
+            return True
+        time.sleep(0.02)
+    return False
+
+
+def test_start_laava_returns_immediately_and_wait_for_job_polls(env):
+    env.runner.hold = threading.Event()
+    res = env.svc.start_laava(spec_dict(env))
+    assert res["status"] == "queued" and "wait_for_job" in res["next"]
+    run_id = res["run_id"]
+    assert _wait_until(lambda: env.svc.job_status(run_id)["status"] == "running")
+    waiting = env.svc.wait_for_job(run_id, timeout_s=0.2, poll_s=0.05)
+    assert waiting["status"] == "running" and "again" in waiting["message"] and waiting["waited_s"] >= 0.1
+    env.runner.hold.set()
+    done = env.svc.wait_for_job(run_id, timeout_s=10, poll_s=0.05)
+    assert done["status"] == "succeeded" and done["summary"]["unmapped_reads"] == GOLDEN_UNMAPPED
+    assert "message" not in done
+
+
+def test_start_with_invalid_spec_is_immediate_and_creates_nothing(env):
+    res = env.svc.start_laava(spec_dict(env, vector_type="nope"))
+    assert res["status"] == "invalid" and env.svc.list_runs() == []
+
+
+def test_jobs_run_one_at_a_time(env):
+    env.runner.hold = threading.Event()
+    first = env.svc.start_laava(spec_dict(env))["run_id"]
+    second = env.svc.start_laava(spec_dict(env))["run_id"]
+    assert _wait_until(lambda: env.svc.job_status(first)["status"] == "running")
+    assert env.svc.job_status(second)["status"] == "queued"
+    env.runner.hold.set()
+    assert env.svc.wait_for_job(first, timeout_s=10, poll_s=0.05)["status"] == "succeeded"
+    assert env.svc.wait_for_job(second, timeout_s=10, poll_s=0.05)["status"] == "succeeded"
+    assert env.runner.max_active == 1
+
+
+def test_start_screen_and_wait(env):
+    run_id = env.svc.run_laava(spec_dict(env))["run_id"]
+    env.runner.hold = threading.Event()
+    first = env.svc.start_screen(run_id)
+    second = env.svc.start_screen(run_id)
+    assert (first["status"], first["screen_id"]) == ("queued", "screen-001")
+    assert second["screen_id"] == "screen-002"  # numbered atomically even when queued back to back
+    env.runner.hold.set()
+    done = env.svc.wait_for_job(run_id, "screen-001", timeout_s=10, poll_s=0.05)
+    assert done["status"] == "succeeded" and done["buckets"] == {"enterobacteria": 1} and done["database"] == "demo"
+    assert env.svc.wait_for_job(run_id, "screen-002", timeout_s=10, poll_s=0.05)["status"] == "succeeded"
+    missing = env.svc.job_status(run_id, "screen-009")
+    assert missing["status"] == "error" and missing["screens"] == ["screen-001", "screen-002"]
+
+
+def test_background_crash_is_visible_not_a_hang(env):
+    env.runner.raise_on_nextflow = RuntimeError("disk on fire")
+    res = env.svc.start_laava(spec_dict(env))
+    done = env.svc.wait_for_job(res["run_id"], timeout_s=10, poll_s=0.05)
+    assert done["status"] == "failed" and "disk on fire" in done["error"]
+
+
+def test_waiting_on_an_unknown_job_returns_at_once(env):
+    t0 = time.monotonic()
+    res = env.svc.wait_for_job("nope", timeout_s=30)
+    assert res["status"] == "error" and time.monotonic() - t0 < 2
+
+
+def test_recover_interrupted_marks_stale_records_failed(env):
+    for rid, status, day in (("old1", "running", "01"), ("old2", "queued", "02"), ("ok", "succeeded", "03")):
+        env.store.create_run({"_id": rid, "type": "laava", "status": status, "created_utc": f"2026-01-{day}T00:00:00Z"})
+    env.store.create_screen({"_id": "ok:screen-001", "run_id": "ok", "screen_id": "screen-001",
+                             "status": "running", "created_utc": "2026-01-03T00:00:01Z", "database": {"name": "demo"}})
+    assert env.svc.recover_interrupted() == 3
+    assert env.store.get_run("old1")["status"] == "failed" and "interrupted" in env.store.get_run("old1")["error"]
+    assert env.store.get_run("old2")["status"] == "failed"
+    assert env.store.get_run("ok")["status"] == "succeeded"
+    assert env.store.list_screens("ok")[0]["status"] == "failed"
+
+
+def test_file_store_survives_restart_and_rejects_unsafe_ids(tmp_path):
+    a = FileRunStore(tmp_path)
+    a.create_run({"_id": "r1", "created_utc": "2026-01-01T00:00:00Z", "status": "running"})
+    a.update_run("r1", {"status": "succeeded"})
+    assert FileRunStore(tmp_path).get_run("r1")["status"] == "succeeded"  # a new process sees it
+    with pytest.raises(ValueError):
+        a.get_run("../escape")
+    with pytest.raises(ValueError):
+        a.create_run({"_id": "r1", "created_utc": "2026-01-02T00:00:00Z", "status": "running"})
+    assert not list(tmp_path.glob("*.tmp")) and not list((tmp_path / "runs").glob("*.tmp"))
+
+
+def test_list_input_files_finds_real_paths_and_skips_work_folders(env):
+    (env.fx / "sub").mkdir()
+    (env.fx / "sub" / "b.fastq.gz").write_bytes(b"x")
+    (env.fx / "work").mkdir()
+    (env.fx / "work" / "hidden.fastq.gz").write_bytes(b"x")
+    res = env.svc.list_input_files("*.fastq.gz")
+    names = [Path(p).name for p in res["files"]]
+    assert names == ["ss.spikein.fastq.gz", "b.fastq.gz"] or sorted(names) == ["b.fastq.gz", "ss.spikein.fastq.gz"]
+    assert "hidden.fastq.gz" not in names and not res["truncated"]
+    assert all(Path(p).is_relative_to(r) for p in res["files"] for r in env.settings.allowed_input_roots
+               if str(p).startswith(str(r)))
+    limited = env.svc.list_input_files("*.fastq.gz", limit=1)
+    assert len(limited["files"]) == 1 and limited["truncated"]
+    assert env.svc.list_input_files("*.nothing")["files"] == []

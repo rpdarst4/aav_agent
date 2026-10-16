@@ -9,21 +9,31 @@ run record has been marked failed.
 from __future__ import annotations
 
 import csv
+import fnmatch
 import gzip
 import hashlib
 import json
+import logging
+import os
 import secrets
+import threading
+import time
 from collections import Counter
-from dataclasses import asdict
+from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
-from aav_agent.config import PathNotAllowed, Settings
-from aav_agent.lims.store import RunStore
-from aav_agent.provenance import collect_provenance, utcnow
-from aav_agent.runner import CommandRunner, SubprocessRunner, tail
-from aav_agent.spec import RunSpec, SpecError, build_laava_params, validate_run_spec
+from .config import PathNotAllowed, Settings
+from .lims.store import RunStore
+from .provenance import collect_provenance, utcnow
+from .runner import CommandRunner, SubprocessRunner, tail
+from .spec import RunSpec, SpecError, build_laava_params, validate_run_spec
+
+logger = logging.getLogger(__name__)
+
+ACTIVE = ("queued", "running")
 
 
 def sha256_file(path: Path, chunk: int = 1024 * 1024) -> str:
@@ -71,6 +81,31 @@ def _public(doc: dict | None) -> dict | None:
     return out
 
 
+@dataclass
+class _LaavaJob:
+    run_id: str
+    sample_id: str
+    run_dir: Path
+    cmd: list
+    log: Path
+    outputs: dict
+    warnings: list
+
+
+@dataclass
+class _ScreenJob:
+    run_id: str
+    screen_id: str
+    doc_id: str
+    sample_id: str
+    outdir: Path
+    cmd: list
+    log: Path
+    report: Path
+    summary_json: Path
+    database_name: str
+
+
 class AavService:
     def __init__(
         self,
@@ -78,11 +113,18 @@ class AavService:
         store: RunStore,
         runner: CommandRunner | None = None,
         run_id_factory: Callable[[], str] = _default_run_id,
+        max_workers: int = 1,
     ):
         self.settings = settings
         self.store = store
         self.runner = runner or SubprocessRunner()
         self._new_run_id = run_id_factory
+        self._lock = threading.Lock()  # serialises record creation (screen numbering)
+        # One job at a time by default: LAAVA and BLAST are heavy on a laptop. Later jobs wait as "queued".
+        self._executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="aav-job")
+
+    def close(self) -> None:
+        self._executor.shutdown(wait=True)
 
     # ------------------------------------------------------------------ helpers
 
@@ -106,8 +148,10 @@ class AavService:
             for c in self.settings.databases.values()
         ]
 
-    def run_laava(self, spec: RunSpec | dict) -> dict:
-        """Run LAAVA on a set of reads. Creates a run folder and a record, and returns the outputs."""
+    # ---------------------------------------------------------------- LAAVA
+
+    def _prepare_laava(self, spec: RunSpec | dict) -> dict | _LaavaJob:
+        """Validate, create the run folder and record (status "queued"). Returns an error dict or a job."""
         s = self.settings
         if isinstance(spec, dict):
             try:
@@ -127,15 +171,13 @@ class AavService:
         params_path.write_text(json.dumps(params, indent=2) + "\n")
         (run_dir / "spec.json").write_text(json.dumps(asdict(spec), indent=2) + "\n")
 
-        now = utcnow()
         self.store.create_run({
-            "_id": run_id, "type": "laava", "status": "running", "sample_id": v.sample_id,
-            "created_utc": now, "run_dir": str(run_dir), "spec": asdict(spec), "params": params,
+            "_id": run_id, "type": "laava", "status": "queued", "sample_id": v.sample_id,
+            "created_utc": utcnow(), "run_dir": str(run_dir), "spec": asdict(spec), "params": params,
             "warnings": v.warnings,
             "inputs": [file_record(role, p, s.max_hash_bytes) for role, p in sorted(v.paths.items())],
             "provenance": collect_provenance(s, self.runner, include_laava=True),
         })
-
         cmd = [
             s.nextflow, "run", "-profile", "local", str(s.laava_dir / "main.nf"),
             "-params-file", str(params_path),
@@ -143,16 +185,19 @@ class AavService:
             "--cpus", str(s.cpus), "--memory", s.memory,
             "--container_version", s.laava_container_version,
         ]
-        log = run_dir / "logs" / "laava.log"
         sid = v.sample_id
         outputs = {
             "name_sorted_bam": run_dir / "output" / "alignment" / f"{sid}.sort_by_name.bam",
             "per_read_tsv": run_dir / "output" / "report" / f"{sid}.per_read.tsv.gz",
             "report_html": run_dir / "output" / "report" / f"{sid}_AAV_report.html",
         }
+        return _LaavaJob(run_id, sid, run_dir, cmd, run_dir / "logs" / "laava.log", outputs, v.warnings)
+
+    def _execute_laava(self, job: _LaavaJob) -> dict:
+        self.store.update_run(job.run_id, {"status": "running", "started_utc": utcnow()})
         try:
-            result = self.runner.run(cmd, cwd=run_dir, env=self._nextflow_env(), log_path=log)
-            missing = [k for k, p in outputs.items() if not p.exists()]
+            result = self.runner.run(job.cmd, cwd=job.run_dir, env=self._nextflow_env(), log_path=job.log)
+            missing = [k for k, p in job.outputs.items() if not p.exists()]
             if result.returncode != 0:
                 error = f"nextflow exited with code {result.returncode}"
             elif missing:
@@ -160,26 +205,70 @@ class AavService:
             else:
                 error = None
         except BaseException as e:
-            self.store.update_run(run_id, {"status": "failed", "finished_utc": utcnow(), "error": repr(e)})
+            self.store.update_run(job.run_id, {"status": "failed", "finished_utc": utcnow(), "error": repr(e)})
             raise
 
         if error:
-            log_tail = tail(log)
-            self.store.update_run(run_id, {"status": "failed", "finished_utc": utcnow(),
-                                           "error": error, "log_tail": log_tail})
-            return {"status": "failed", "run_id": run_id, "error": error, "log_tail": log_tail,
-                    "log": str(log), "warnings": v.warnings}
+            log_tail = tail(job.log)
+            self.store.update_run(job.run_id, {"status": "failed", "finished_utc": utcnow(),
+                                               "error": error, "log_tail": log_tail})
+            return {"status": "failed", "run_id": job.run_id, "error": error, "log_tail": log_tail,
+                    "log": str(job.log), "warnings": job.warnings}
 
-        summary = summarize_per_read(outputs["per_read_tsv"])
-        out_paths = {k: str(p) for k, p in outputs.items()}
-        out_paths["laava_output"] = str(run_dir / "output")
-        self.store.update_run(run_id, {"status": "succeeded", "finished_utc": utcnow(),
-                                       "outputs": out_paths, "summary": summary})
-        return {"status": "succeeded", "run_id": run_id, "sample_id": sid, "outputs": out_paths,
-                "summary": summary, "warnings": v.warnings}
+        summary = summarize_per_read(job.outputs["per_read_tsv"])
+        out_paths = {k: str(p) for k, p in job.outputs.items()}
+        out_paths["laava_output"] = str(job.run_dir / "output")
+        self.store.update_run(job.run_id, {"status": "succeeded", "finished_utc": utcnow(),
+                                           "outputs": out_paths, "summary": summary})
+        return {"status": "succeeded", "run_id": job.run_id, "sample_id": job.sample_id, "outputs": out_paths,
+                "summary": summary, "warnings": job.warnings}
 
-    def screen_contaminants(self, run_id: str, database: str | None = None, truth: str | None = None) -> dict:
-        """BLAST the reads LAAVA could not map, classify them by organism type, and add a section to the report."""
+    _SKIP_DIRS = {"work", ".git", "node_modules", "__pycache__", ".nextflow"}
+
+    def list_input_files(self, pattern: str = "*", limit: int = 50) -> dict:
+        """Files the tools may read (under the allowed folders) whose names match a glob pattern.
+
+        Lets an agent find real paths instead of guessing them. Nextflow work folders and similar
+        are skipped.
+        """
+        found: list[str] = []
+        truncated = False
+        for root in self.settings.allowed_input_roots:
+            if not root.is_dir():
+                continue
+            for dirpath, dirnames, filenames in os.walk(root):
+                dirnames[:] = sorted(d for d in dirnames if d not in self._SKIP_DIRS)
+                for name in sorted(filenames):
+                    if fnmatch.fnmatch(name, pattern):
+                        if len(found) >= limit:
+                            truncated = True
+                            break
+                        found.append(str(Path(dirpath) / name))
+                if truncated:
+                    break
+            if truncated:
+                break
+        return {"pattern": pattern, "files": found, "truncated": truncated,
+                "folders_searched": [str(r) for r in self.settings.allowed_input_roots]}
+
+    def run_laava(self, spec: RunSpec | dict) -> dict:
+        """Run LAAVA and wait for it to finish (blocking). Tests and scripts use this."""
+        job = self._prepare_laava(spec)
+        return job if isinstance(job, dict) else self._execute_laava(job)
+
+    def start_laava(self, spec: RunSpec | dict) -> dict:
+        """Validate and queue a LAAVA run; returns immediately. Poll with wait_for_job."""
+        job = self._prepare_laava(spec)
+        if isinstance(job, dict):
+            return job
+        self._submit(self._execute_laava, job)
+        return {"status": "queued", "run_id": job.run_id, "sample_id": job.sample_id,
+                "warnings": job.warnings,
+                "next": "Call wait_for_job with this run_id until the status is succeeded or failed."}
+
+    # ---------------------------------------------------------------- screening
+
+    def _prepare_screen(self, run_id: str, database: str | None, truth: str | None) -> dict | _ScreenJob:
         s = self.settings
         run = self.store.get_run(run_id)
         if run is None or run.get("type") != "laava":
@@ -212,19 +301,19 @@ class AavService:
 
         sid = run["sample_id"]
         run_dir = Path(run["run_dir"])
-        n = len(self.store.list_screens(run_id)) + 1
-        screen_id = f"screen-{n:03d}"
-        doc_id = f"{run_id}:{screen_id}"
-        outdir = run_dir / "screens" / screen_id
-        (outdir / "work").mkdir(parents=True)
-
         prov = collect_provenance(s, self.runner, include_laava=False)
         prov["categories_sha256"] = sha256_file(s.categories)
-        self.store.create_screen({
-            "_id": doc_id, "type": "screen", "run_id": run_id, "screen_id": screen_id, "status": "running",
-            "created_utc": utcnow(), "database": {"name": name, "dir": str(cfg.dir), "db_name": cfg.db_name},
-            "truth": str(truth_path) if truth_path else None, "provenance": prov, "outdir": str(outdir),
-        })
+        with self._lock:  # numbering and creation must be atomic
+            n = len(self.store.list_screens(run_id)) + 1
+            screen_id = f"screen-{n:03d}"
+            doc_id = f"{run_id}:{screen_id}"
+            outdir = run_dir / "screens" / screen_id
+            (outdir / "work").mkdir(parents=True)
+            self.store.create_screen({
+                "_id": doc_id, "type": "screen", "run_id": run_id, "screen_id": screen_id, "status": "queued",
+                "created_utc": utcnow(), "database": {"name": name, "dir": str(cfg.dir), "db_name": cfg.db_name},
+                "truth": str(truth_path) if truth_path else None, "provenance": prov, "outdir": str(outdir),
+            })
 
         cmd = [
             s.nextflow, "run", "-profile", "local", str(s.screen_pipeline),
@@ -236,42 +325,127 @@ class AavService:
         ]
         if truth_path:
             cmd += ["--truth", str(truth_path), "--show_validation"]
-        log = outdir / "screen.log"
-        report = outdir / sid / "report" / f"{sid}_AAV_report.contaminants.html"
-        summary_json = outdir / sid / "classification" / f"{sid}.classified.json"
+        return _ScreenJob(
+            run_id, screen_id, doc_id, sid, outdir, cmd, outdir / "screen.log",
+            outdir / sid / "report" / f"{sid}_AAV_report.contaminants.html",
+            outdir / sid / "classification" / f"{sid}.classified.json", name,
+        )
+
+    def _execute_screen(self, job: _ScreenJob) -> dict:
+        self.store.update_screen(job.doc_id, {"status": "running", "started_utc": utcnow()})
         try:
-            result = self.runner.run(cmd, cwd=outdir, env=self._nextflow_env(), log_path=log)
+            result = self.runner.run(job.cmd, cwd=job.outdir, env=self._nextflow_env(), log_path=job.log)
             if result.returncode != 0:
                 error = f"nextflow exited with code {result.returncode}"
-            elif not (report.exists() and summary_json.exists()):
+            elif not (job.report.exists() and job.summary_json.exists()):
                 error = "the screen finished but its report or summary file is missing"
             else:
                 error = None
         except BaseException as e:
-            self.store.update_screen(doc_id, {"status": "failed", "finished_utc": utcnow(), "error": repr(e)})
+            self.store.update_screen(job.doc_id, {"status": "failed", "finished_utc": utcnow(), "error": repr(e)})
             raise
 
         if error:
-            log_tail = tail(log)
-            self.store.update_screen(doc_id, {"status": "failed", "finished_utc": utcnow(),
-                                              "error": error, "log_tail": log_tail})
-            return {"status": "failed", "run_id": run_id, "screen_id": screen_id, "error": error,
-                    "log_tail": log_tail, "log": str(log)}
+            log_tail = tail(job.log)
+            self.store.update_screen(job.doc_id, {"status": "failed", "finished_utc": utcnow(),
+                                                  "error": error, "log_tail": log_tail})
+            return {"status": "failed", "run_id": job.run_id, "screen_id": job.screen_id, "error": error,
+                    "log_tail": log_tail, "log": str(job.log)}
 
-        summary = json.loads(summary_json.read_text())
+        summary = json.loads(job.summary_json.read_text())
         buckets = {b: v["reads"] for b, v in summary["buckets"].items()}
         db_meta = summary.get("database") or {}
         result_doc = {
-            "report_html": str(report), "classified_json": str(summary_json),
+            "report_html": str(job.report), "classified_json": str(job.summary_json),
             "unmapped_reads_screened": summary["total_reads"], "buckets": buckets,
             "database_recorded": {k: db_meta.get(k) for k in ("db_title", "db_date", "db_sequences", "blastn")},
         }
         if "validation" in summary:
             result_doc["validation"] = {k: summary["validation"][k] for k in
                                         ("spiked_reads", "leaked_reads", "correct", "recovery_of_classifiable")}
-        self.store.update_screen(doc_id, {"status": "succeeded", "finished_utc": utcnow(), **result_doc})
-        self.store.update_run(run_id, {"latest_screen": screen_id})
-        return {"status": "succeeded", "run_id": run_id, "screen_id": screen_id, "database": name, **result_doc}
+        self.store.update_screen(job.doc_id, {"status": "succeeded", "finished_utc": utcnow(), **result_doc})
+        self.store.update_run(job.run_id, {"latest_screen": job.screen_id})
+        return {"status": "succeeded", "run_id": job.run_id, "screen_id": job.screen_id,
+                "database": job.database_name, **result_doc}
+
+    def screen_contaminants(self, run_id: str, database: str | None = None, truth: str | None = None) -> dict:
+        """BLAST the reads LAAVA could not map, classify them by organism type, and add a report section
+        (blocking). Tests and scripts use this."""
+        job = self._prepare_screen(run_id, database, truth)
+        return job if isinstance(job, dict) else self._execute_screen(job)
+
+    def start_screen(self, run_id: str, database: str | None = None, truth: str | None = None) -> dict:
+        """Validate and queue a contaminant screen; returns immediately. Poll with wait_for_job."""
+        job = self._prepare_screen(run_id, database, truth)
+        if isinstance(job, dict):
+            return job
+        self._submit(self._execute_screen, job)
+        return {"status": "queued", "run_id": job.run_id, "screen_id": job.screen_id,
+                "next": "Call wait_for_job with this run_id and screen_id until the status is succeeded or failed."}
+
+    # ---------------------------------------------------------------- background jobs
+
+    def _submit(self, fn: Callable, job) -> Future:
+        fut = self._executor.submit(fn, job)
+
+        def _log_failure(f: Future) -> None:
+            exc = f.exception()
+            if exc is not None:  # the record was already marked failed by the executor function
+                logger.error("background job %s crashed: %r", getattr(job, "run_id", "?"), exc)
+
+        fut.add_done_callback(_log_failure)
+        return fut
+
+    _JOB_FIELDS = ("status", "error", "log_tail", "outputs", "summary", "buckets", "report_html",
+                   "unmapped_reads_screened", "database_recorded", "validation")
+
+    def job_status(self, run_id: str, screen_id: str | None = None) -> dict:
+        """Current state of a LAAVA run, or of one screen of it when screen_id is given."""
+        if screen_id:
+            docs = {d["screen_id"]: d for d in self.store.list_screens(run_id)}
+            doc = docs.get(screen_id)
+            if doc is None:
+                return self._error(f"no screen {screen_id!r} for run {run_id!r}", screens=sorted(docs))
+            out = {"run_id": run_id, "screen_id": screen_id, "database": doc["database"]["name"]}
+        else:
+            doc = self.store.get_run(run_id)
+            if doc is None:
+                return self._error(f"no such run: {run_id}",
+                                   recent_runs=[r["_id"] for r in self.store.list_runs(5)])
+            out = {"run_id": run_id, "sample_id": doc.get("sample_id")}
+        out.update({k: doc[k] for k in self._JOB_FIELDS if k in doc})
+        return out
+
+    def wait_for_job(self, run_id: str, screen_id: str | None = None, timeout_s: float = 45.0,
+                     poll_s: float = 1.0) -> dict:
+        """Wait up to timeout_s for a job to finish. Returns its status either way, so callers can loop."""
+        deadline = time.monotonic() + max(0.0, timeout_s)
+        start = time.monotonic()
+        while True:
+            status = self.job_status(run_id, screen_id)
+            if status.get("status") not in ACTIVE:
+                break
+            if time.monotonic() >= deadline:
+                status["message"] = "Still in progress. Call wait_for_job again."
+                break
+            time.sleep(min(poll_s, max(0.0, deadline - time.monotonic())))
+        status["waited_s"] = round(time.monotonic() - start, 1)
+        return status
+
+    def recover_interrupted(self) -> int:
+        """Mark records left queued/running by a previous server process as failed. Returns how many."""
+        n = 0
+        for run in self.store.list_runs(100_000):
+            if run["status"] in ACTIVE:
+                self.store.update_run(run["_id"], {"status": "failed", "finished_utc": utcnow(),
+                                                   "error": "interrupted: the server stopped while this run was in progress"})
+                n += 1
+            for sc in self.store.list_screens(run["_id"]):
+                if sc["status"] in ACTIVE:
+                    self.store.update_screen(sc["_id"], {"status": "failed", "finished_utc": utcnow(),
+                                                         "error": "interrupted: the server stopped while this screen was in progress"})
+                    n += 1
+        return n
 
     def get_run(self, run_id: str, detail: bool = False) -> dict:
         doc = self.store.get_run(run_id)

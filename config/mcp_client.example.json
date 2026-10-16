@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "aav-agent": {
+      "type": "stdio",
+      "command": "poetry",
+      "args": [
+        "run",
+        "python",
+        "-m",
+        "aav_agent.mcp_server",
+        "--settings",
+        "/ABSOLUTE/PATH/TO/aav_agent/config/settings.yaml"
+      ],
+      "cwd": "/ABSOLUTE/PATH/TO/aav_agent",
+      "env": {
+        "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+      }
+    }
+  }
+}
