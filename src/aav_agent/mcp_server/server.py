@@ -30,6 +30,7 @@ Tools for analysing AAV vector long-read sequencing with LAAVA and screening for
 
 Typical workflow:
 1. list_input_files to find real file paths (reads, vector FASTA/BED, packaging, host). Never invent paths.
+   describe_input to read record names from a FASTA and feature names from a BED. Never invent names.
 2. run_laava starts a LAAVA run and returns a run_id at once.
 3. wait_for_job(run_id) until status is succeeded or failed; repeat while it says still in progress.
 4. screen_contaminants(run_id) BLASTs the reads LAAVA could not map, classifies them by organism type,
@@ -56,11 +57,22 @@ def make_tools(service: AavService) -> dict[str, Callable]:
         Use a database's name as the `database` argument of screen_contaminants."""
         return await asyncio.to_thread(service.list_databases)
 
-    async def list_input_files(pattern: str = "*", limit: int = 50) -> dict:
-        """Find files the tools are allowed to read, by name pattern, e.g. pattern="*.fastq.gz",
-        "*.fasta", "*.bed" or "*.bam". Returns full paths. Use these paths for run_laava; do not
-        guess paths. If truncated is true, narrow the pattern."""
-        return await asyncio.to_thread(service.list_input_files, pattern, limit)
+    async def list_input_files(
+        pattern: str | None = None, folder: str | None = None, kind: str | None = None, limit: int = 50
+    ) -> dict:
+        """Find files the tools are allowed to read. kind is "reads" (FASTQ/BAM), "fasta" (.fa, .fasta, .fna),
+        "bed" or "bam"; use kind instead of guessing extensions. pattern is an optional name filter such as
+        "*packaging*" (comma-separate several). folder limits the search to one directory, for example
+        "laava/test" or a full path. Returns full paths; use them exactly. If truncated is true, narrow the
+        search with folder or pattern. Do not guess paths."""
+        return await asyncio.to_thread(service.list_input_files, pattern, limit, folder, kind)
+
+    async def describe_input(path: str) -> dict:
+        """Look inside an input file. For a FASTA it lists the record names and lengths (use these for
+        repcap_name, helper_name and lambda_name); for a BED it lists the feature names (use these for
+        itr_label_1, itr_label_2 and mitr_label); for reads it gives the format and size. Use it rather than
+        guessing names."""
+        return await asyncio.to_thread(service.describe_input, path)
 
     async def run_laava(
         reads: str,
@@ -136,7 +148,7 @@ def make_tools(service: AavService) -> dict[str, Callable]:
         a run_id when the user refers to an earlier run."""
         return await asyncio.to_thread(service.list_runs, limit)
 
-    tools = [list_databases, list_input_files, run_laava, screen_contaminants, wait_for_job, get_run, list_runs]
+    tools = [list_databases, list_input_files, describe_input, run_laava, screen_contaminants, wait_for_job, get_run, list_runs]
     return {t.__name__: t for t in tools}
 
 

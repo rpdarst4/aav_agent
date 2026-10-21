@@ -14,7 +14,7 @@ from test_service import GOLDEN_UNMAPPED, FakeRunner, env, spec_dict, store  # n
 from aav_agent.lims.store import FileRunStore
 from aav_agent.mcp_server import server as mcp_server
 
-EXPECTED_TOOLS = {"list_databases", "list_input_files", "run_laava", "screen_contaminants",
+EXPECTED_TOOLS = {"list_databases", "list_input_files", "describe_input", "run_laava", "screen_contaminants",
                   "wait_for_job", "get_run", "list_runs"}
 
 
@@ -162,3 +162,13 @@ def test_main_parses_settings_argument(tmp_path, monkeypatch):
     monkeypatch.setattr(mcp_server, "create_server", lambda svc: Server())
     mcp_server.main(["--settings", "/x/settings.yaml"])
     assert seen == {"path": "/x/settings.yaml", "transport": "stdio"}
+
+
+def test_file_tools_pass_kind_folder_and_path_through(env):
+    tools = mcp_server.make_tools(env.svc)
+    listed = call(tools["list_input_files"], kind="fasta", folder=str(env.fx))
+    assert listed["status"] == "ok" and any(p.endswith("packaging.fa") for p in listed["files"])
+    assert not any(p.endswith("vector.bed") for p in listed["files"])
+    described = call(tools["describe_input"], path=str(env.fx / "packaging.fa"))
+    assert [r["id"] for r in described["records"]] == ["pRep2Cap9", "pHelper", "Lambda"]
+    assert call(tools["list_input_files"], kind="nonsense")["status"] == "error"

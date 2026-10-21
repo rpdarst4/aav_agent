@@ -69,6 +69,34 @@ def summarize_per_read(path: Path) -> dict:
     }
 
 
+OTHER_VECTOR_WARN_FRACTION = 0.9
+UNMAPPED_WARN_FRACTION = 0.5
+
+
+def assess_summary(summary: dict) -> list[str]:
+    """Warnings about a finished run's read assignments that suggest mismatched inputs.
+
+    Heuristics, not LAAVA errors: LAAVA happily reports whatever it finds. When reads come from a different
+    construct than the one supplied, nearly all of them end up "other-vector" (they map, but do not look like
+    ITR-to-ITR genomes) or unmapped.
+    """
+    total = summary.get("total_reads") or 0
+    if not total:
+        return ["LAAVA found no reads in the input."]
+    out = []
+    unmapped = summary.get("unmapped_reads", 0)
+    if unmapped / total >= UNMAPPED_WARN_FRACTION:
+        out.append(f"{unmapped:,} of {total:,} reads ({unmapped / total:.0%}) did not map to any supplied reference. "
+                   "Check that the reads belong to this construct and that the references are the right ones.")
+    other = (summary.get("by_assigned_type") or {}).get("other-vector", 0)
+    if other / total >= OTHER_VECTOR_WARN_FRACTION:
+        out.append(f"{other:,} of {total:,} reads ({other / total:.0%}) were assigned 'other-vector': they map to the "
+                   "vector but do not look like AAV genomes between the ITRs. This is typical when the reads come "
+                   "from a different construct, sample or annotation than the one supplied; check that the reads, "
+                   "vector FASTA and annotation BED belong together.")
+    return out
+
+
 def _default_run_id() -> str:
     return f"{datetime.now(timezone.utc):%Y%m%d-%H%M%S}-{secrets.token_hex(3)}"
 
@@ -216,30 +244,75 @@ class AavService:
                     "log": str(job.log), "warnings": job.warnings}
 
         summary = summarize_per_read(job.outputs["per_read_tsv"])
+        warnings = job.warnings + assess_summary(summary)
         out_paths = {k: str(p) for k, p in job.outputs.items()}
         out_paths["laava_output"] = str(job.run_dir / "output")
-        self.store.update_run(job.run_id, {"status": "succeeded", "finished_utc": utcnow(),
-                                           "outputs": out_paths, "summary": summary})
+        self.store.update_run(job.run_id, {"status": "succeeded", "finished_utc": utcnow(), "outputs": out_paths,
+                                           "summary": summary, "warnings": warnings})
         return {"status": "succeeded", "run_id": job.run_id, "sample_id": job.sample_id, "outputs": out_paths,
-                "summary": summary, "warnings": job.warnings}
+                "summary": summary, "warnings": warnings}
 
     _SKIP_DIRS = {"work", ".git", "node_modules", "__pycache__", ".nextflow"}
 
-    def list_input_files(self, pattern: str = "*", limit: int = 50) -> dict:
-        """Files the tools may read (under the allowed folders) whose names match a glob pattern.
+    def _resolve_folder(self, folder: str) -> Path | None:
+        """A directory under the allowed folders. Relative names are tried against each allowed folder and
+        its parent, so "laava/test" finds <projects>/laava/test."""
+        p = Path(folder).expanduser()
+        if p.is_absolute():
+            candidates = [p]
+        else:
+            roots = self.settings.allowed_input_roots
+            candidates = [r / p for r in roots] + [r.parent / p for r in roots]
+        for c in candidates:
+            try:
+                resolved = self.settings.resolve_input(str(c))
+            except PathNotAllowed:
+                continue
+            if resolved.is_dir():
+                return resolved
+        return None
 
-        Lets an agent find real paths instead of guessing them. Nextflow work folders and similar
-        are skipped.
+    def list_input_files(self, pattern: str | None = None, limit: int = 50, folder: str | None = None,
+                         kind: str | None = None) -> dict:
+        """Files the tools may read, found by `kind` ("reads", "fasta", "bed", "bam") and/or name pattern(s).
+
+        `kind` and `pattern` together mean "files of this kind whose name matches"; either alone is enough.
+        Patterns are shell-style globs, comma-separated ("*packaging*,*host*"). `folder` limits the search to
+        one directory. Lets an agent find real paths instead of guessing them; Nextflow work folders and
+        previous run outputs are skipped.
         """
+        from .inputs import KIND_PATTERNS
+
+        if kind and kind not in KIND_PATTERNS:
+            return self._error(f"unknown kind {kind!r}", valid_kinds=sorted(KIND_PATTERNS))
+        # kind and pattern narrow each other: a file must have the kind's extension AND match a pattern
+        kind_patterns = [p.lower() for p in KIND_PATTERNS[kind]] if kind else ["*"]
+        name_patterns = [p.strip().lower() for p in (pattern or "").split(",") if p.strip()] or ["*"]
+        patterns = {"kind": kind_patterns if kind else None, "pattern": name_patterns if pattern else None}
+
+        def wanted(name: str) -> bool:
+            lowered = name.lower()
+            return (any(fnmatch.fnmatchcase(lowered, k) for k in kind_patterns)
+                    and any(fnmatch.fnmatchcase(lowered, n) for n in name_patterns))
+
+        if folder:
+            found_dir = self._resolve_folder(folder)
+            if found_dir is None:
+                return self._error(f"folder not found under the allowed folders: {folder!r}",
+                                   folders_searched=[str(r) for r in self.settings.allowed_input_roots])
+            search = [found_dir]
+        else:
+            search = [r for r in self.settings.allowed_input_roots if r.is_dir()]
+
+        runs_dir = self.settings.runs_dir.resolve()
         found: list[str] = []
         truncated = False
-        for root in self.settings.allowed_input_roots:
-            if not root.is_dir():
-                continue
+        for root in search:
             for dirpath, dirnames, filenames in os.walk(root):
-                dirnames[:] = sorted(d for d in dirnames if d not in self._SKIP_DIRS)
+                dirnames[:] = sorted(d for d in dirnames
+                                     if d not in self._SKIP_DIRS and (Path(dirpath) / d).resolve() != runs_dir)
                 for name in sorted(filenames):
-                    if fnmatch.fnmatch(name, pattern):
+                    if wanted(name):
                         if len(found) >= limit:
                             truncated = True
                             break
@@ -248,8 +321,29 @@ class AavService:
                     break
             if truncated:
                 break
-        return {"pattern": pattern, "files": found, "truncated": truncated,
-                "folders_searched": [str(r) for r in self.settings.allowed_input_roots]}
+        return {"status": "ok", "patterns": patterns, "files": found, "truncated": truncated,
+                "folders_searched": [str(r) for r in search]}
+
+    def describe_input(self, path: str) -> dict:
+        """What is inside an input file: record names and lengths of a FASTA, feature names of a BED,
+        or the type and size of a reads file. Use it to take names from the file instead of guessing."""
+        from .inputs import READ_SUFFIXES, bed_features, fasta_records, is_fasta
+
+        try:
+            p = self.settings.resolve_input(path)
+        except PathNotAllowed as e:
+            return self._error(str(e))
+        if not p.is_file():
+            return self._error(f"file not found: {p}")
+        base = {"status": "ok", "path": str(p), "size_bytes": p.stat().st_size}
+        name = p.name.lower()
+        if is_fasta(name):
+            return {**base, "type": "fasta", **fasta_records(p)}
+        if name.endswith(".bed"):
+            return {**base, "type": "bed", **bed_features(p)}
+        if name.endswith(READ_SUFFIXES):
+            return {**base, "type": "reads", "format": "bam" if name.endswith(".bam") else "fastq"}
+        return {**base, "type": "other"}
 
     def run_laava(self, spec: RunSpec | dict) -> dict:
         """Run LAAVA and wait for it to finish (blocking). Tests and scripts use this."""
@@ -396,7 +490,7 @@ class AavService:
         fut.add_done_callback(_log_failure)
         return fut
 
-    _JOB_FIELDS = ("status", "error", "log_tail", "outputs", "summary", "buckets", "report_html",
+    _JOB_FIELDS = ("status", "error", "log_tail", "outputs", "summary", "warnings", "buckets", "report_html",
                    "unmapped_reads_screened", "database_recorded", "validation")
 
     def job_status(self, run_id: str, screen_id: str | None = None) -> dict:

@@ -3,6 +3,7 @@ FakeRunner that creates the files the real pipelines would, and MongoRunStore is
 against a small fake collection."""
 
 import copy
+import gzip
 import hashlib
 import json
 import shutil
@@ -40,6 +41,7 @@ class FakeRunner:
         self.git_ok = git_ok
         self.docker_ok = docker_ok
         self.raise_on_nextflow = raise_on_nextflow
+        self.per_read_text = None  # replaces the golden per-read table (to simulate odd LAAVA results)
         self.hold = None  # a threading.Event: pipeline runs block until it is set
         self.active = 0
         self.max_active = 0
@@ -103,7 +105,11 @@ class FakeRunner:
         (out / "alignment").mkdir(parents=True)
         (out / "report").mkdir(parents=True)
         shutil.copy(GOLDEN_BAM, out / "alignment" / f"{sid}.sort_by_name.bam")
-        shutil.copy(GOLDEN_PER_READ, out / "report" / f"{sid}.per_read.tsv.gz")
+        if self.per_read_text is None:
+            shutil.copy(GOLDEN_PER_READ, out / "report" / f"{sid}.per_read.tsv.gz")
+        else:
+            with gzip.open(out / "report" / f"{sid}.per_read.tsv.gz", "wt") as fh:
+                fh.write(self.per_read_text)
         shutil.copy(GOLDEN_REPORT, out / "report" / f"{sid}_AAV_report.html")
 
     def _fake_screen(self, args):
@@ -285,11 +291,46 @@ def test_from_dict_rejects_unknown_fields_and_coerces_numbers(env):
     assert res["status"] == "invalid" and any("vector_fa is required" in m for m in res["errors"])
 
 
-def test_name_mismatch_is_a_warning_not_an_error(env):
-    spec = RunSpec.from_dict(spec_dict(env, repcap_name="NotThere"))
+def test_invented_names_are_errors_that_list_the_real_ones(env):
+    spec = RunSpec.from_dict(spec_dict(env, repcap_name="Repcap", helper_name="Helper", lambda_name="Lambda"))
     v = validate_run_spec(spec, env.settings)
-    assert v.errors == []
-    assert any("repcap_name='NotThere'" in w for w in v.warnings)
+    assert len([e for e in v.errors if "does not match any record" in e]) == 2  # Lambda is real, the others are not
+    assert any("repcap_name='Repcap'" in e and "pRep2Cap9" in e and "pHelper" in e for e in v.errors)
+    assert any("helper_name='Helper'" in e for e in v.errors)  # "Helper" is not "pHelper", though it appears inside it
+    res = env.svc.run_laava(spec_dict(env, helper_name="pAV_CMV_GFP"))
+    assert res["status"] == "invalid" and env.svc.list_runs() == []  # nothing ran
+
+
+def test_name_matching_accepts_ids_prefixes_and_header_words_only():
+    from aav_agent.inputs import name_matches_header
+
+    assert name_matches_header("pHelper", "pHelper")  # exact id
+    assert name_matches_header("pHelper", "pHelper_v2 adenovirus helper")  # leading part of the id
+    assert name_matches_header("Lambda", "NC_001416.1 Lambda phage 48502")  # another word of the header
+    assert not name_matches_header("Helper", "pHelper")  # merely inside a longer word
+    assert not name_matches_header("Repcap", "pRep2Cap9")
+    assert not name_matches_header("x", "")
+
+
+def test_names_without_a_packaging_file_and_flipflop_mismatch_only_warn(env):
+    v = validate_run_spec(RunSpec.from_dict(spec_dict(env, packaging_fa=None, host_fa=None, flipflop_name="AAV2")), env.settings)
+    assert v.errors == [] and len(v.warnings) == 2
+
+
+def test_bed_label_mismatch_is_an_error_listing_the_real_names(env):
+    v = validate_run_spec(RunSpec.from_dict(spec_dict(env, itr_label_1="ITR1", mitr_label="MITR")), env.settings)
+    assert any("itr_label_1='ITR1'" in e and "names: ITR" in e for e in v.errors)
+    assert any("mitr_label='MITR'" in e for e in v.errors)
+    assert not any("itr_label_2" in e for e in v.errors)  # the default "ITR" is a real name in this BED
+    res = env.svc.run_laava(spec_dict(env, mitr_label="MITR"))
+    assert res["status"] == "invalid" and env.svc.list_runs() == []  # nothing ran
+
+
+def test_the_annotation_must_describe_the_vector_construct(env):
+    (env.fx / "other_construct.fa").write_text(">pAV_CMV_GFP\nACGT\n")
+    v = validate_run_spec(RunSpec.from_dict(spec_dict(env, vector_fa=str(env.fx / "other_construct.fa"))), env.settings)
+    assert any("describes vec" in e and "pAV_CMV_GFP" in e and "do not belong together" in e for e in v.errors)
+    assert validate_run_spec(RunSpec.from_dict(spec_dict(env)), env.settings).errors == []  # a matching pair is fine
 
 
 # ---------------------------------------------------------------- run_laava
@@ -298,6 +339,7 @@ def test_name_mismatch_is_a_warning_not_an_error(env):
 def test_run_laava_success(env):
     res = env.svc.run_laava(spec_dict(env))
     assert res["status"] == "succeeded" and res["run_id"] == "run-001" and res["sample_id"] == "ss.spikein"
+    assert res["warnings"] == []
     assert res["summary"]["total_reads"] == GOLDEN_TOTAL_READS
     assert res["summary"]["unmapped_reads"] == GOLDEN_UNMAPPED
     assert res["summary"]["by_reference_label"]["vector"] == GOLDEN_TOTAL_READS - GOLDEN_UNMAPPED
@@ -587,3 +629,116 @@ def test_list_input_files_finds_real_paths_and_skips_work_folders(env):
     limited = env.svc.list_input_files("*.fastq.gz", limit=1)
     assert len(limited["files"]) == 1 and limited["truncated"]
     assert env.svc.list_input_files("*.nothing")["files"] == []
+
+
+def test_list_input_files_by_kind_pattern_and_folder(env):
+    (env.settings.laava_dir / "test" / "fasta").mkdir(parents=True)
+    for name in ("packaging.fa", "hg38.chr19trunc-chrM.fa", "AAV2.flipflop.fasta", "notes.txt"):
+        (env.settings.laava_dir / "test" / "fasta" / name).write_text(">x\nACGT\n")
+    # kind="fasta" covers .fa and .fasta alike: the extension need not be guessed
+    res = env.svc.list_input_files(kind="fasta", folder="laava/test")
+    names = sorted(Path(p).name for p in res["files"])
+    assert res["status"] == "ok" and names == ["AAV2.flipflop.fasta", "hg38.chr19trunc-chrM.fa", "packaging.fa"]
+    assert res["folders_searched"] == [str((env.settings.laava_dir / "test").resolve())]
+    # comma-separated patterns, case-insensitive, combined with a folder
+    by_name = env.svc.list_input_files(pattern="*PACKAGING*,*.flipflop.*", folder="laava/test/fasta")
+    assert sorted(Path(p).name for p in by_name["files"]) == ["AAV2.flipflop.fasta", "packaging.fa"]
+    # reads / bed kinds, and a folder given as an absolute path
+    assert [Path(p).name for p in env.svc.list_input_files(kind="reads", folder=str(env.fx))["files"]] == ["ss.spikein.fastq.gz"]
+    assert [Path(p).name for p in env.svc.list_input_files(kind="bed")["files"]] == ["vector.bed"]
+    # previous run outputs and work folders are not inputs
+    (env.settings.runs_dir / "r1" / "output").mkdir(parents=True)
+    (env.settings.runs_dir / "r1" / "output" / "unmapped.fa").write_text(">x\n")
+    assert "unmapped.fa" not in [Path(p).name for p in env.svc.list_input_files(kind="fasta")["files"]]
+
+
+def test_list_input_files_errors_are_data_with_hints(env):
+    bad_kind = env.svc.list_input_files(kind="spreadsheet")
+    assert bad_kind["status"] == "error" and "fasta" in bad_kind["valid_kinds"]
+    missing = env.svc.list_input_files(folder="no/such/place")
+    assert missing["status"] == "error" and missing["folders_searched"]
+    outside = env.svc.list_input_files(folder="/etc")
+    assert outside["status"] == "error"  # not under an allowed folder
+
+
+def test_describe_input_reads_names_from_the_files(env):
+    fasta = env.svc.describe_input(str(env.fx / "packaging.fa"))
+    assert fasta["status"] == "ok" and fasta["type"] == "fasta" and fasta["n_records"] == 3
+    assert [r["id"] for r in fasta["records"]] == ["pRep2Cap9", "pHelper", "Lambda"]
+    assert fasta["records"][0]["length"] == 4 and not fasta["truncated"]
+
+    bed = env.svc.describe_input(str(env.fx / "vector.bed"))
+    assert bed["type"] == "bed" and bed["feature_names"] == {"ITR": 1} and bed["first_rows"][0]["name"] == "ITR"
+
+    reads = env.svc.describe_input(str(env.fx / "ss.spikein.fastq.gz"))
+    assert reads["type"] == "reads" and reads["format"] == "fastq"
+    (env.fx / "notes.txt").write_text("hi")
+    assert env.svc.describe_input(str(env.fx / "notes.txt"))["type"] == "other"
+    assert env.svc.describe_input(str(env.fx / "missing.fa"))["status"] == "error"
+    assert "outside the folders" in env.svc.describe_input("/etc/passwd")["message"]
+
+
+def test_describe_input_truncates_long_fasta_listings_and_handles_headerless_beds(env):
+    big = env.fx / "many.fa"
+    big.write_text("".join(f">rec{i}\nACGTACGT\n" for i in range(120)))
+    res = env.svc.describe_input(str(big))
+    assert res["n_records"] == 120 and len(res["records"]) == 50 and res["truncated"]
+    plain = env.fx / "plain.bed"
+    plain.write_text("chr1\t0\t100\n# comment\nchr1\t200\t300\n")
+    res = env.svc.describe_input(str(plain))
+    assert res["n_features"] == 2 and res["feature_names"] == {} and "no name column" in res["note"]
+
+
+def test_kind_and_pattern_narrow_each_other_instead_of_adding_up(env):
+    (env.settings.laava_dir / "test" / "fasta").mkdir(parents=True)
+    for name in ("packaging.fa", "hg38.chr19trunc-chrM.fa", "ss.construct.fasta"):
+        (env.settings.laava_dir / "test" / "fasta" / name).write_text(">x\nACGT\n")
+    only_packaging = env.svc.list_input_files(kind="fasta", pattern="*packaging*", folder="laava/test")
+    assert [Path(p).name for p in only_packaging["files"]] == ["packaging.fa"]
+    host_or_construct = env.svc.list_input_files(kind="fasta", pattern="*hg38*, *construct*", folder="laava/test")
+    assert sorted(Path(p).name for p in host_or_construct["files"]) == ["hg38.chr19trunc-chrM.fa", "ss.construct.fasta"]
+    # the file name matches the pattern but is not of the requested kind: excluded
+    assert env.svc.list_input_files(kind="reads", pattern="*construct*", folder="laava/test")["files"] == []
+    assert [Path(p).name for p in env.svc.list_input_files(kind="reads", pattern="*spike*")["files"]] == ["ss.spikein.fastq.gz"]
+
+
+# ---------------------------------------------------------------- sanity checks on LAAVA results
+
+
+def _per_read(n_other_vector, n_unmapped=0, n_good=0):
+    head = "read_id\thas_primary\thas_supp\tassigned_type\tassigned_subtype\teffective_count\treference_label\tread_target_overlap\n"
+    rows = [f"o{i}\tTrue\tFalse\tother-vector\tNA\t1\tvector\t0.1\n" for i in range(n_other_vector)]
+    rows += [f"u{i}\tFalse\tFalse\tNA\tNA\t1\t(unmapped)\t0\n" for i in range(n_unmapped)]
+    rows += [f"g{i}\tTrue\tFalse\tssAAV\tfull\t1\tvector\t1.0\n" for i in range(n_good)]
+    return head + "".join(rows)
+
+
+def test_assess_summary_flags_inputs_that_probably_do_not_belong_together():
+    from aav_agent.service import assess_summary
+
+    assert assess_summary({"total_reads": 0}) == ["LAAVA found no reads in the input."]
+    healthy = {"total_reads": 3627, "unmapped_reads": 130, "by_assigned_type": {"ssAAV": 2032, "other-vector": 1367}}
+    assert assess_summary(healthy) == []  # the real spike-in sample: 38% other-vector is normal
+    all_other = {"total_reads": 2000, "unmapped_reads": 0, "by_assigned_type": {"other-vector": 2000}}
+    (w,) = assess_summary(all_other)
+    assert "2,000 of 2,000 reads (100%)" in w and "belong together" in w
+    assert assess_summary({"total_reads": 100, "unmapped_reads": 0, "by_assigned_type": {"other-vector": 89}}) == []
+    assert len(assess_summary({"total_reads": 100, "unmapped_reads": 0, "by_assigned_type": {"other-vector": 90}})) == 1
+    (w,) = assess_summary({"total_reads": 100, "unmapped_reads": 60, "by_assigned_type": {"NA": 60, "ssAAV": 40}})
+    assert "60 of 100 reads (60%) did not map" in w
+
+
+def test_a_run_whose_reads_are_all_other_vector_succeeds_but_warns(env):
+    env.runner.per_read_text = _per_read(n_other_vector=200)
+    res = env.svc.run_laava(spec_dict(env))
+    assert res["status"] == "succeeded"
+    assert len(res["warnings"]) == 1 and "other-vector" in res["warnings"][0]
+    assert env.store.get_run(res["run_id"])["warnings"] == res["warnings"]  # kept in the record
+    assert env.svc.job_status(res["run_id"])["warnings"] == res["warnings"]  # and visible to pollers
+
+
+def test_start_up_and_result_warnings_are_combined(env):
+    env.runner.per_read_text = _per_read(n_other_vector=0, n_unmapped=80, n_good=20)
+    res = env.svc.run_laava(spec_dict(env, packaging_fa=None, host_fa=None, repcap_name="pRep2Cap9"))
+    assert res["status"] == "succeeded" and len(res["warnings"]) == 2
+    assert any("without a packaging_fa" in w for w in res["warnings"]) and any("did not map" in w for w in res["warnings"])

@@ -6,13 +6,12 @@ Plain dataclasses with explicit validation. Validation returns readable messages
 
 from __future__ import annotations
 
-import gzip
 import re
-
 from dataclasses import dataclass, fields
 from pathlib import Path
 
-from aav_agent.config import PathNotAllowed, Settings
+from .config import PathNotAllowed, Settings
+from .inputs import bed_chroms, bed_feature_names, fasta_headers, fasta_ids, name_matches_header
 
 VECTOR_TYPES = ("ss", "sc", "unspecified")
 READ_EXTENSIONS = (".bam", ".fastq", ".fastq.gz", ".fq", ".fq.gz")
@@ -96,17 +95,6 @@ def strip_read_extension(name: str) -> str:
     return name
 
 
-def fasta_ids(path: Path) -> list[str]:
-    """First word of every FASTA header."""
-    opener = gzip.open if str(path).endswith(".gz") else open
-    ids = []
-    with opener(path, "rt") as fh:
-        for line in fh:
-            if line.startswith(">"):
-                ids.append(line[1:].split()[0] if line[1:].split() else "")
-    return ids
-
-
 def validate_run_spec(spec: RunSpec, settings: Settings) -> ValidationResult:
     errors: list[str] = []
     warnings: list[str] = []
@@ -150,17 +138,40 @@ def validate_run_spec(spec: RunSpec, settings: Settings) -> ValidationResult:
     if not 0 <= spec.min_supp_joint_coverage <= 1:
         errors.append("min_supp_joint_coverage must be between 0 and 1")
 
-    # Names refer to records in the packaging FASTA; a mismatch is a warning because LAAVA's own
-    # matching rules are not checked here.
+    # repcap/helper/lambda names refer to records in the packaging FASTA. A name that matches nothing is an
+    # error, not a warning: it would otherwise run for minutes before LAAVA fails or mislabels reads, and
+    # a language model will invent plausible-looking names unless told what the real ones are.
     named = {k: getattr(spec, k) for k in ("repcap_name", "helper_name", "lambda_name") if getattr(spec, k)}
     if named and "packaging_fa" not in paths:
         warnings.append("repcap/helper/lambda names were given without a packaging_fa file")
     elif named:
-        ids = fasta_ids(paths["packaging_fa"])
+        headers = fasta_headers(paths["packaging_fa"])
+        ids = [(h.split() or [""])[0] for h in headers]
         for k, v in named.items():
-            if not any(v == i or v in i for i in ids):
-                warnings.append(f"{k}={v!r} does not match any record in {paths['packaging_fa'].name} "
-                                f"(records: {', '.join(ids[:8])})")
+            if not any(name_matches_header(v, h) for h in headers):
+                errors.append(f"{k}={v!r} does not match any record in {paths['packaging_fa'].name}; "
+                              f"its records are: {', '.join(ids[:10]) or '(none)'}. Leave {k} unset if none applies")
+
+    # The annotation BED must describe the vector FASTA: its sequence names (1st column) are records of that
+    # FASTA. A mismatch means the wrong construct was paired with the wrong annotation.
+    if "vector_bed" in paths and "vector_fa" in paths:
+        vector_ids = set(fasta_ids(paths["vector_fa"]))
+        unknown = sorted(bed_chroms(paths["vector_bed"]) - vector_ids)
+        if unknown:
+            errors.append(f"vector_bed {paths['vector_bed'].name} describes {', '.join(unknown[:5])}, which is not a "
+                          f"record in vector_fa {paths['vector_fa'].name} (records: "
+                          f"{', '.join(sorted(vector_ids)[:5])}); the annotation and the construct do not belong together")
+
+    # ITR labels refer to feature names in the annotation BED (4th column). A label that is not one of those
+    # names is an error for the same reason as the packaging names above.
+    labels = {k: getattr(spec, k) for k in ("itr_label_1", "itr_label_2", "mitr_label") if getattr(spec, k)}
+    if labels and "vector_bed" in paths:
+        names = bed_feature_names(paths["vector_bed"])
+        if names:
+            for k, v in labels.items():
+                if v not in names:
+                    errors.append(f"{k}={v!r} is not a feature name in {paths['vector_bed'].name} "
+                                  f"(names: {', '.join(sorted(names)[:10])}). Leave {k} unset if none applies")
     if bool(spec.flipflop_name) != bool(spec.flipflop_fa):
         warnings.append("flipflop_name and flipflop_fa are normally given together")
 
