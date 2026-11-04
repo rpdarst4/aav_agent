@@ -229,6 +229,11 @@ def env(tmp_path, store):
                             "tmp": tmp_path})()
 
 
+def paths(listing):
+    """File paths from a list_input_files result (entries are {"path", "what"} dicts)."""
+    return [f["path"] for f in listing["files"]]
+
+
 def spec_dict(env, **over):
     d = {"reads": str(env.fx / "ss.spikein.fastq.gz"), "vector_fa": str(env.fx / "vector.fa"),
          "vector_bed": str(env.fx / "vector.bed"), "vector_type": "ss",
@@ -621,10 +626,10 @@ def test_list_input_files_finds_real_paths_and_skips_work_folders(env):
     (env.fx / "work").mkdir()
     (env.fx / "work" / "hidden.fastq.gz").write_bytes(b"x")
     res = env.svc.list_input_files("*.fastq.gz")
-    names = [Path(p).name for p in res["files"]]
+    names = [Path(p).name for p in paths(res)]
     assert names == ["ss.spikein.fastq.gz", "b.fastq.gz"] or sorted(names) == ["b.fastq.gz", "ss.spikein.fastq.gz"]
     assert "hidden.fastq.gz" not in names and not res["truncated"]
-    assert all(Path(p).is_relative_to(r) for p in res["files"] for r in env.settings.allowed_input_roots
+    assert all(Path(p).is_relative_to(r) for p in paths(res) for r in env.settings.allowed_input_roots
                if str(p).startswith(str(r)))
     limited = env.svc.list_input_files("*.fastq.gz", limit=1)
     assert len(limited["files"]) == 1 and limited["truncated"]
@@ -637,19 +642,19 @@ def test_list_input_files_by_kind_pattern_and_folder(env):
         (env.settings.laava_dir / "test" / "fasta" / name).write_text(">x\nACGT\n")
     # kind="fasta" covers .fa and .fasta alike: the extension need not be guessed
     res = env.svc.list_input_files(kind="fasta", folder="laava/test")
-    names = sorted(Path(p).name for p in res["files"])
+    names = sorted(Path(p).name for p in paths(res))
     assert res["status"] == "ok" and names == ["AAV2.flipflop.fasta", "hg38.chr19trunc-chrM.fa", "packaging.fa"]
     assert res["folders_searched"] == [str((env.settings.laava_dir / "test").resolve())]
     # comma-separated patterns, case-insensitive, combined with a folder
     by_name = env.svc.list_input_files(pattern="*PACKAGING*,*.flipflop.*", folder="laava/test/fasta")
-    assert sorted(Path(p).name for p in by_name["files"]) == ["AAV2.flipflop.fasta", "packaging.fa"]
+    assert sorted(Path(p).name for p in paths(by_name)) == ["AAV2.flipflop.fasta", "packaging.fa"]
     # reads / bed kinds, and a folder given as an absolute path
-    assert [Path(p).name for p in env.svc.list_input_files(kind="reads", folder=str(env.fx))["files"]] == ["ss.spikein.fastq.gz"]
-    assert [Path(p).name for p in env.svc.list_input_files(kind="bed")["files"]] == ["vector.bed"]
+    assert [Path(p).name for p in paths(env.svc.list_input_files(kind="reads", folder=str(env.fx)))] == ["ss.spikein.fastq.gz"]
+    assert [Path(p).name for p in paths(env.svc.list_input_files(kind="bed"))] == ["vector.bed"]
     # previous run outputs and work folders are not inputs
     (env.settings.runs_dir / "r1" / "output").mkdir(parents=True)
     (env.settings.runs_dir / "r1" / "output" / "unmapped.fa").write_text(">x\n")
-    assert "unmapped.fa" not in [Path(p).name for p in env.svc.list_input_files(kind="fasta")["files"]]
+    assert "unmapped.fa" not in [Path(p).name for p in paths(env.svc.list_input_files(kind="fasta"))]
 
 
 def test_list_input_files_errors_are_data_with_hints(env):
@@ -694,12 +699,12 @@ def test_kind_and_pattern_narrow_each_other_instead_of_adding_up(env):
     for name in ("packaging.fa", "hg38.chr19trunc-chrM.fa", "ss.construct.fasta"):
         (env.settings.laava_dir / "test" / "fasta" / name).write_text(">x\nACGT\n")
     only_packaging = env.svc.list_input_files(kind="fasta", pattern="*packaging*", folder="laava/test")
-    assert [Path(p).name for p in only_packaging["files"]] == ["packaging.fa"]
-    host_or_construct = env.svc.list_input_files(kind="fasta", pattern="*hg38*, *construct*", folder="laava/test")
-    assert sorted(Path(p).name for p in host_or_construct["files"]) == ["hg38.chr19trunc-chrM.fa", "ss.construct.fasta"]
+    assert [Path(p).name for p in paths(only_packaging)] == ["packaging.fa"]
+    host_or_construct = env.svc.list_input_files(kind="fasta", pattern="*hg38*, *ss.construct*", folder="laava/test")
+    assert sorted(Path(p).name for p in paths(host_or_construct)) == ["hg38.chr19trunc-chrM.fa", "ss.construct.fasta"]
     # the file name matches the pattern but is not of the requested kind: excluded
-    assert env.svc.list_input_files(kind="reads", pattern="*construct*", folder="laava/test")["files"] == []
-    assert [Path(p).name for p in env.svc.list_input_files(kind="reads", pattern="*spike*")["files"]] == ["ss.spikein.fastq.gz"]
+    assert env.svc.list_input_files(kind="reads", pattern="*construct*", folder="laava/test")["files"] == []  # no reads there
+    assert [Path(p).name for p in paths(env.svc.list_input_files(kind="reads", pattern="*spike*"))] == ["ss.spikein.fastq.gz"]
 
 
 # ---------------------------------------------------------------- sanity checks on LAAVA results
@@ -742,3 +747,136 @@ def test_start_up_and_result_warnings_are_combined(env):
     res = env.svc.run_laava(spec_dict(env, packaging_fa=None, host_fa=None, repcap_name="pRep2Cap9"))
     assert res["status"] == "succeeded" and len(res["warnings"]) == 2
     assert any("without a packaging_fa" in w for w in res["warnings"]) and any("did not map" in w for w in res["warnings"])
+
+
+# ---------------------------------------------------------------- file descriptions
+
+
+def test_listing_describes_each_file_by_content(env):
+    (env.fx / "hg38.chr19trunc-chrM.fa").write_text(">chr19 truncated\nACGT\n>chrM\nACGT\n")
+    (env.fx / "mm10.fa").write_text(">chr1\nACGT\n>chrX\nACGT\n")
+    (env.fx / "humanized_vector.fa").write_text(">vec2\nACGT\n")
+    listing = env.svc.list_input_files(kind="fasta", folder=str(env.fx))
+    what = {Path(f["path"]).name: f["what"] for f in listing["files"]}
+    assert "3 records (pRep2Cap9, pHelper, Lambda)" in what["packaging.fa"]
+    assert "plasmid sequences" in what["packaging.fa"] and "name suggests" not in what["packaging.fa"]
+    assert "1 record (vec)" in what["vector.fa"] and "single short sequence" in what["vector.fa"]
+    host = what["hg38.chr19trunc-chrM.fa"]
+    assert "2 records (chr19, chrM)" in host and "candidate host genome" in host and "suggests human" in host
+    assert "suggests mouse" in what["mm10.fa"] and "candidate host genome" in what["mm10.fa"]
+    assert "suggests" not in what["humanized_vector.fa"]  # "humanized" is not "human"
+    beds = {Path(f["path"]).name: f["what"] for f in env.svc.list_input_files(kind="bed")["files"]}
+    assert beds["vector.bed"] == "BED, 1 features on vec (ITR)"
+    reads = env.svc.list_input_files(kind="reads", folder=str(env.fx))["files"][0]["what"]
+    assert reads.startswith("reads (FASTQ)")
+
+
+def test_descriptions_cope_with_big_unreadable_and_unknown_files(env):
+    from aav_agent.inputs import fasta_profile, fasta_role_hint, summarize_file
+
+    big = env.fx / "genome.fa"
+    big.write_text("".join(f">chr{i}\n" + "ACGT" * 50 + "\n" for i in range(1, 8)))
+    prof = fasta_profile(big, scan_limit=100)  # pretend it is too big to scan
+    assert prof["scanned"] is False and prof["first_ids"] == ["chr1", "chr2", "chr3", "chr4"]
+    assert "candidate host genome" in fasta_role_hint(prof)  # chromosome-like names are enough
+    assert fasta_role_hint({"first_ids": ["x"], "n": 1, "total": 10**6, "scanned": True}) == ""  # nothing to say
+
+    broken = env.fx / "broken.fa"
+    broken.write_bytes(b"\xff\xfe>x\nACGT\n")
+    assert summarize_file(broken).startswith("could not be read")
+    (env.fx / "notes.txt").write_text("hi")
+    assert summarize_file(env.fx / "notes.txt") == ""  # unknown types: no description
+    listing = env.svc.list_input_files(pattern="broken.fa", folder=str(env.fx))
+    assert paths(listing) == [str(broken)]  # one unreadable file does not break the listing
+
+
+# ---------------------------------------------------------------- finding files from the user's own words
+
+
+def _lab(env):
+    """A small version of the real layout: LAAVA test files, plus the spike-in reads under the data folder."""
+    base = env.settings.laava_dir / "test"
+    (base / "fasta").mkdir(parents=True)
+    (base / "samples").mkdir()
+    (base / "fasta" / "hg38.chr19trunc-chrM.fa").write_text(">chr19\nACGT\n>chrM\nACGT\n")
+    (base / "fasta" / "packaging.fa").write_text(">pRep2Cap9\nACGT\n>pHelper\nACGT\n")
+    (base / "samples" / "ss.construct.fasta").write_text(">pAV_CMV_GFP\nACGT\n")
+    (base / "samples" / "ss.annotation.bed").write_text("pAV_CMV_GFP\t0\t4\tITR\n")
+    (base / "samples" / "ss.subsample005.bam").write_bytes(b"BAM")
+    (env.settings.data_dir / "ss.spikein.fastq.gz").write_bytes(b"reads")  # the spike-in the user means
+    (env.settings.data_dir / "laava_out").mkdir()
+    (env.settings.data_dir / "laava_out" / "ss.spikein.sort_by_name.bam").write_bytes(b"BAM")  # an old output
+
+
+def test_query_ranks_files_by_the_users_own_words(env):
+    _lab(env)
+    res = env.svc.list_input_files(query="ss spike-in fastq")  # no folder: look everywhere
+    first = res["files"][0]
+    assert Path(first["path"]).name == "ss.spikein.fastq.gz" and first["matches"] == ["ss", "spike", "fastq"]
+    ranked = [Path(f["path"]).name for f in res["files"]]
+    assert ranked.index("ss.spikein.sort_by_name.bam") > 0 and "ss.subsample005.bam" in ranked  # lesser matches follow
+    assert res["patterns"]["query"] == ["ss", "spike", "fastq"]  # "in" is dropped as a stop word
+
+    host = env.svc.list_input_files(query="human genome (hg38)", folder="laava/test")["files"][0]
+    assert Path(host["path"]).name == "hg38.chr19trunc-chrM.fa" and {"human", "genome", "hg38"} <= set(host["matches"])
+    typo = env.svc.list_input_files(query="human gneome", kind="fasta")["files"][0]  # one word is enough to rank it
+    assert Path(typo["path"]).name == "hg38.chr19trunc-chrM.fa" and typo["matches"] == ["human"]
+    pkg = env.svc.list_input_files(query="packaging", kind="fasta", folder="laava/test")["files"]
+    assert [Path(f["path"]).name for f in pkg] == ["packaging.fa"]
+    everywhere = env.svc.list_input_files(query="packaging", kind="fasta")["files"]  # also the copy under fixtures
+    assert len(everywhere) == 2 and all(Path(f["path"]).name == "packaging.fa" for f in everywhere)
+    bed = env.svc.list_input_files(query="annotation bed")["files"][0]
+    assert Path(bed["path"]).name == "ss.annotation.bed"
+
+
+def test_a_pattern_made_of_real_words_also_matches_the_description(env):
+    _lab(env)
+    # the failing case from the transcripts: the model searches for *human*, which is not in the file name
+    res = env.svc.list_input_files(pattern="*human*", kind="fasta", folder="laava/test")
+    assert [Path(f["path"]).name for f in res["files"]] == ["hg38.chr19trunc-chrM.fa"] and "note" not in res
+    # the guess that failed before: *host* is not in any file name, but the genome is described as a host candidate
+    host = env.svc.list_input_files(pattern="*host*", kind="fasta", folder="laava/test")
+    assert [Path(f["path"]).name for f in host["files"]] == ["hg38.chr19trunc-chrM.fa"] and "note" not in host
+    # a short pattern such as *ss* is a name filter only, so it cannot match random description text
+    names = [Path(f["path"]).name for f in env.svc.list_input_files(pattern="*ss*", kind="fasta", folder="laava/test")["files"]]
+    assert names == ["ss.construct.fasta"]
+
+
+def test_a_search_that_finds_nothing_falls_back_to_the_kind_and_folder_with_a_note(env):
+    _lab(env)
+    res = env.svc.list_input_files(pattern="*zebrafish*", kind="fasta", folder="laava/test")
+    assert sorted(Path(f["path"]).name for f in res["files"]) == ["hg38.chr19trunc-chrM.fa", "packaging.fa", "ss.construct.fasta"]
+    assert "Nothing matched pattern '*zebrafish*'" in res["note"] and "choose by the description" in res["note"].lower()
+    q = env.svc.list_input_files(query="zebrafish", kind="fasta", folder="laava/test")
+    assert len(q["files"]) == 3 and "Nothing matched query 'zebrafish'" in q["note"]
+    # with no kind or folder to fall back to, an empty search stays empty and says nothing misleading
+    nothing = env.svc.list_input_files(query="zebrafish")
+    assert nothing["files"] == [] and "note" not in nothing
+    # an unfiltered listing has no note either
+    assert "note" not in env.svc.list_input_files(kind="fasta", folder="laava/test")
+
+
+# ---------------------------------------------------------------- labels and mitr
+
+
+def test_mitr_label_is_refused_for_ss_but_allowed_for_sc(env):
+    ss = validate_run_spec(RunSpec.from_dict(spec_dict(env, mitr_label="ITR")), env.settings)
+    assert any("mitr_label='ITR' is only for self-complementary (sc) vectors" in e for e in ss.errors)
+    assert not any("is not a feature name" in e for e in ss.errors)  # one clear message, not two
+    sc = validate_run_spec(RunSpec.from_dict(spec_dict(env, vector_type="sc", mitr_label="ITR")), env.settings)
+    assert sc.errors == []
+
+
+def test_reads_labelled_with_raw_record_names_trigger_a_warning():
+    from aav_agent.service import assess_summary
+
+    fine = {"total_reads": 3627, "unmapped_reads": 130, "by_assigned_type": {"ssAAV": 2000},
+            "by_reference_label": {"vector": 3414, "(unmapped)": 130, "chimeric-vector": 30, "chimeric-nonvector": 5,
+                                   "repcap": 27, "host": 13, "helper": 8, "lambda": 2}}
+    assert assess_summary(fine) == []
+    wrong_helper = {**fine, "by_reference_label": {**fine["by_reference_label"], "helper": 0, "pHelper": 8}}
+    (w,) = assess_summary(wrong_helper)
+    assert "pHelper (8)" in w and "helper_name" in w and "no type" in w
+    two = {**fine, "by_reference_label": {"vector": 100, "Fiber": 3, "E1A_E1B": 4}}
+    (w,) = assess_summary({**two, "total_reads": 107, "unmapped_reads": 0})
+    assert "Fiber (3)" in w and "E1A_E1B (4)" in w

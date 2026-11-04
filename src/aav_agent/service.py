@@ -15,6 +15,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import secrets
 import threading
 import time
@@ -69,6 +70,9 @@ def summarize_per_read(path: Path) -> dict:
     }
 
 
+# Labels LAAVA gives reads by type. Any other label is the raw name of a reference record that was never given a
+# type (helper_name, repcap_name or lambda_name did not name it), such as "pHelper" when helper_name was wrong.
+STANDARD_LABELS = frozenset({"vector", "host", "repcap", "helper", "lambda", "(unmapped)"})
 OTHER_VECTOR_WARN_FRACTION = 0.9
 UNMAPPED_WARN_FRACTION = 0.5
 
@@ -88,6 +92,13 @@ def assess_summary(summary: dict) -> list[str]:
     if unmapped / total >= UNMAPPED_WARN_FRACTION:
         out.append(f"{unmapped:,} of {total:,} reads ({unmapped / total:.0%}) did not map to any supplied reference. "
                    "Check that the reads belong to this construct and that the references are the right ones.")
+    raw = {k: v for k, v in (summary.get("by_reference_label") or {}).items()
+           if k not in STANDARD_LABELS and not k.startswith("chimeric")}
+    if raw:
+        listed = ", ".join(f"{k} ({v:,})" for k, v in raw.items())
+        out.append(f"Reads were labelled with raw record names: {listed}. Those packaging records have no type, so "
+                   "repcap_name, helper_name or lambda_name probably names the wrong record (for example the helper "
+                   "plasmid's own record should be helper_name).")
     other = (summary.get("by_assigned_type") or {}).get("other-vector", 0)
     if other / total >= OTHER_VECTOR_WARN_FRACTION:
         out.append(f"{other:,} of {total:,} reads ({other / total:.0%}) were assigned 'other-vector': they map to the "
@@ -272,28 +283,42 @@ class AavService:
                 return resolved
         return None
 
-    def list_input_files(self, pattern: str | None = None, limit: int = 50, folder: str | None = None,
-                         kind: str | None = None) -> dict:
-        """Files the tools may read, found by `kind` ("reads", "fasta", "bed", "bam") and/or name pattern(s).
+    _STOPWORDS = frozenset({"the", "and", "for", "with", "from", "file", "files", "use", "using", "this", "that",
+                            "run", "laava", "please", "screen", "contaminants", "of", "in", "on", "to", "an",
+                            "is", "are", "its", "it", "my", "our", "under"})
+    _MAX_DESCRIBED = 400  # most files described per search, to keep a listing quick
 
-        `kind` and `pattern` together mean "files of this kind whose name matches"; either alone is enough.
-        Patterns are shell-style globs, comma-separated ("*packaging*,*host*"). `folder` limits the search to
-        one directory. Lets an agent find real paths instead of guessing them; Nextflow work folders and
-        previous run outputs are skipped.
+    @staticmethod
+    def _tokens(text: str) -> set[str]:
+        return set(re.findall(r"[a-z0-9]+", text.lower()))
+
+    def _query_matches(self, query_tokens: list[str], path: Path, what: str) -> list[str]:
+        """Which of the query's words occur in the file's name, folder name or description."""
+        file_tokens = self._tokens(path.name) | self._tokens(path.parent.name) | self._tokens(what)
+        return [q for q in query_tokens
+                if any(t == q or (len(q) >= 4 and t.startswith(q)) for t in file_tokens)]
+
+    def list_input_files(self, pattern: str | None = None, limit: int = 50, folder: str | None = None,
+                         kind: str | None = None, query: str | None = None) -> dict:
+        """Find files the tools may read.
+
+        `query` is free text in the user's own words ("ss spike-in fastq", "human genome hg38"): files are
+        ranked by how many of its words occur in their name, folder name or one-line description. `kind`
+        ("reads", "fasta", "bed", "bam") restricts the file type, `pattern` is a comma-separated name glob
+        (it may also match the description), and `folder` limits the search to one directory; all of them
+        narrow each other. If a search with `pattern` or `query` finds nothing but `kind` or `folder` was
+        given, the files of that kind in that folder are returned instead, with a note, so a bad guess at a
+        name does not end the search. Each file comes with a description of its contents; Nextflow work
+        folders and previous run outputs are skipped.
         """
-        from .inputs import KIND_PATTERNS
+        from .inputs import KIND_PATTERNS, summarize_file
 
         if kind and kind not in KIND_PATTERNS:
             return self._error(f"unknown kind {kind!r}", valid_kinds=sorted(KIND_PATTERNS))
-        # kind and pattern narrow each other: a file must have the kind's extension AND match a pattern
         kind_patterns = [p.lower() for p in KIND_PATTERNS[kind]] if kind else ["*"]
-        name_patterns = [p.strip().lower() for p in (pattern or "").split(",") if p.strip()] or ["*"]
-        patterns = {"kind": kind_patterns if kind else None, "pattern": name_patterns if pattern else None}
-
-        def wanted(name: str) -> bool:
-            lowered = name.lower()
-            return (any(fnmatch.fnmatchcase(lowered, k) for k in kind_patterns)
-                    and any(fnmatch.fnmatchcase(lowered, n) for n in name_patterns))
+        name_patterns = [p.strip().lower() for p in (pattern or "").split(",") if p.strip()]
+        query_tokens = [t for t in dict.fromkeys(re.findall(r"[a-z0-9]+", (query or "").lower()))
+                        if t not in self._STOPWORDS and len(t) >= 2]
 
         if folder:
             found_dir = self._resolve_folder(folder)
@@ -304,25 +329,74 @@ class AavService:
         else:
             search = [r for r in self.settings.allowed_input_roots if r.is_dir()]
 
+        # 1. every file of the requested kind, in a stable order
         runs_dir = self.settings.runs_dir.resolve()
-        found: list[str] = []
-        truncated = False
+        candidates: list[Path] = []
         for root in search:
             for dirpath, dirnames, filenames in os.walk(root):
                 dirnames[:] = sorted(d for d in dirnames
                                      if d not in self._SKIP_DIRS and (Path(dirpath) / d).resolve() != runs_dir)
                 for name in sorted(filenames):
-                    if wanted(name):
-                        if len(found) >= limit:
-                            truncated = True
-                            break
-                        found.append(str(Path(dirpath) / name))
-                if truncated:
-                    break
-            if truncated:
-                break
-        return {"status": "ok", "patterns": patterns, "files": found, "truncated": truncated,
-                "folders_searched": [str(r) for r in search]}
+                    if any(fnmatch.fnmatchcase(name.lower(), k) for k in kind_patterns):
+                        candidates.append(Path(dirpath) / name)
+
+        descriptions: dict[Path, str] = {}
+
+        def what(p: Path) -> str:
+            if p not in descriptions:
+                descriptions[p] = summarize_file(p)
+            return descriptions[p]
+
+        def pattern_ok(p: Path) -> bool:
+            if not name_patterns:
+                return True
+            for pat in name_patterns:
+                if fnmatch.fnmatchcase(p.name.lower(), pat):
+                    return True
+                if len(pat.replace("*", "").replace("?", "")) >= 4 and fnmatch.fnmatchcase(what(p).lower(), pat):
+                    return True  # a pattern of real words (not just "*ss*") may match the description too
+            return False
+
+        def search_files(use_filters: bool) -> tuple[list[tuple[Path, list[str]]], bool]:
+            hits: list[tuple[Path, list[str]]] = []
+            capped = len(candidates) > self._MAX_DESCRIBED and bool(query_tokens or name_patterns)
+            for p in candidates[: self._MAX_DESCRIBED] if (use_filters and (query_tokens or name_patterns)) else candidates:
+                if use_filters and not pattern_ok(p):
+                    continue
+                matched: list[str] = []
+                if use_filters and query_tokens:
+                    matched = self._query_matches(query_tokens, p, what(p))
+                    if not matched:
+                        continue
+                hits.append((p, matched))
+            if use_filters and query_tokens:
+                hits.sort(key=lambda h: (-len(h[1]), str(h[0])))  # most matching words first
+            return hits, capped
+
+        hits, capped = search_files(use_filters=True)
+        note = None
+        if not hits and (query_tokens or name_patterns) and (kind or folder):
+            hits, capped = search_files(use_filters=False)
+            if hits:
+                what_was_tried = " and ".join(x for x in (f"query {query!r}" if query_tokens else "",
+                                                          f"pattern {pattern!r}" if name_patterns else "") if x)
+                note = (f"Nothing matched {what_was_tried}, so these are all the {kind or 'matching'} files"
+                        f"{' in ' + folder if folder else ''}. Choose by the description of each file.")
+
+        truncated = len(hits) > limit
+        files = []
+        for p, matched in hits[:limit]:
+            entry = {"path": str(p), "what": what(p)}
+            if matched:
+                entry["matches"] = matched
+            files.append(entry)
+        out = {"status": "ok", "patterns": {"kind": kind_patterns if kind else None,
+                                            "pattern": name_patterns or None, "query": query_tokens or None},
+               "files": files, "truncated": truncated or capped,
+               "folders_searched": [str(r) for r in search]}
+        if note:
+            out["note"] = note
+        return out
 
     def describe_input(self, path: str) -> dict:
         """What is inside an input file: record names and lengths of a FASTA, feature names of a BED,

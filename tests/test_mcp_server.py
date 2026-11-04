@@ -7,6 +7,7 @@ import inspect
 import json
 import sys
 import types
+from pathlib import Path
 
 import pytest
 from test_service import GOLDEN_UNMAPPED, FakeRunner, env, spec_dict, store  # noqa: F401  (fixtures)
@@ -100,7 +101,7 @@ def test_list_databases_and_input_files_tools(env):
     tools = mcp_server.make_tools(env.svc)
     assert {d["name"] for d in call(tools["list_databases"])} == {"demo", "nt"}
     files = call(tools["list_input_files"], pattern="*.fa")
-    assert any(p.endswith("vector.fa") for p in files["files"])
+    assert any(f["path"].endswith("vector.fa") for f in files["files"])
 
 
 def test_build_service_from_environment(tmp_path):
@@ -167,8 +168,24 @@ def test_main_parses_settings_argument(tmp_path, monkeypatch):
 def test_file_tools_pass_kind_folder_and_path_through(env):
     tools = mcp_server.make_tools(env.svc)
     listed = call(tools["list_input_files"], kind="fasta", folder=str(env.fx))
-    assert listed["status"] == "ok" and any(p.endswith("packaging.fa") for p in listed["files"])
-    assert not any(p.endswith("vector.bed") for p in listed["files"])
+    assert listed["status"] == "ok" and any(f["path"].endswith("packaging.fa") for f in listed["files"])
+    assert not any(f["path"].endswith("vector.bed") for f in listed["files"])
     described = call(tools["describe_input"], path=str(env.fx / "packaging.fa"))
     assert [r["id"] for r in described["records"]] == ["pRep2Cap9", "pHelper", "Lambda"]
     assert call(tools["list_input_files"], kind="nonsense")["status"] == "error"
+
+
+def test_the_screen_tool_names_the_available_databases(env):
+    tools = mcp_server.make_tools(env.svc)
+    assert "Available databases: demo (default)" in tools["screen_contaminants"].__doc__
+    assert "nt" not in tools["screen_contaminants"].__doc__.split("Available databases:")[1]  # not offered: unavailable
+    again = mcp_server.make_tools(env.svc)  # rebuilding does not pile up text
+    assert again["screen_contaminants"].__doc__.count("Available databases") == 1
+
+
+def test_list_input_files_tool_takes_the_users_words(env):
+    tools = mcp_server.make_tools(env.svc)
+    res = call(tools["list_input_files"], query="spike-in fastq")
+    assert Path(res["files"][0]["path"]).name == "ss.spikein.fastq.gz" and res["files"][0]["matches"]
+    params = list(inspect.signature(tools["list_input_files"]).parameters)
+    assert params[0] == "query"  # the first argument a model fills in is the one that works best

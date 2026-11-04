@@ -165,6 +165,11 @@ def validate_run_spec(spec: RunSpec, settings: Settings) -> ValidationResult:
     # ITR labels refer to feature names in the annotation BED (4th column). A label that is not one of those
     # names is an error for the same reason as the packaging names above.
     labels = {k: getattr(spec, k) for k in ("itr_label_1", "itr_label_2", "mitr_label") if getattr(spec, k)}
+    if spec.vector_type == "ss" and "mitr_label" in labels:
+        # The mutated ITR exists only in self-complementary vectors. Models fill this field with any feature
+        # name that exists in the BED, which passes the check below, so it is refused outright for ss.
+        errors.append(f"mitr_label={labels.pop('mitr_label')!r} is only for self-complementary (sc) vectors, and "
+                      "vector_type is ss; leave mitr_label unset")
     if labels and "vector_bed" in paths:
         names = bed_feature_names(paths["vector_bed"])
         if names:
