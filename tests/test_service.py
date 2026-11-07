@@ -867,16 +867,13 @@ def test_mitr_label_is_refused_for_ss_but_allowed_for_sc(env):
     assert sc.errors == []
 
 
-def test_reads_labelled_with_raw_record_names_trigger_a_warning():
+def test_packaging_records_keep_their_own_names_and_that_is_not_a_warning():
+    """The agent never sets repcap/helper/lambda names, so packaging records are labelled with the names the
+    researchers gave them in the FASTA. That is expected, not a sign of a mistake."""
     from aav_agent.service import assess_summary
 
-    fine = {"total_reads": 3627, "unmapped_reads": 130, "by_assigned_type": {"ssAAV": 2000},
-            "by_reference_label": {"vector": 3414, "(unmapped)": 130, "chimeric-vector": 30, "chimeric-nonvector": 5,
-                                   "repcap": 27, "host": 13, "helper": 8, "lambda": 2}}
-    assert assess_summary(fine) == []
-    wrong_helper = {**fine, "by_reference_label": {**fine["by_reference_label"], "helper": 0, "pHelper": 8}}
-    (w,) = assess_summary(wrong_helper)
-    assert "pHelper (8)" in w and "helper_name" in w and "no type" in w
-    two = {**fine, "by_reference_label": {"vector": 100, "Fiber": 3, "E1A_E1B": 4}}
-    (w,) = assess_summary({**two, "total_reads": 107, "unmapped_reads": 0})
-    assert "Fiber (3)" in w and "E1A_E1B (4)" in w
+    labels = {"vector": 3414, "pRep2Cap9": 27, "pHelper": 8, "Lambda": 2, "E1A_E1B": 4, "Fiber": 1, "host": 13,
+              "chimeric-vector": 30, "(unmapped)": 130}
+    summary = {"total_reads": 3629, "unmapped_reads": 130, "by_reference_label": labels,
+               "by_assigned_type": {"ssAAV": 2032, "other-vector": 1367}}
+    assert assess_summary(summary) == []

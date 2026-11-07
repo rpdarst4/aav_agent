@@ -563,3 +563,17 @@ def test_ollama_chat_builds_its_client_from_host_and_key(monkeypatch):
     assert made[0] == {"host": "http://pc:11434"}
     assert made[1] == {"host": "https://ollama.com", "headers": {"Authorization": "Bearer secret"}}
     assert made[2]["headers"] == {"Authorization": "Bearer from-env"}
+
+
+def test_a_model_that_tries_to_name_the_packaging_components_is_told_it_cannot():
+    llm = FakeLLM([
+        call("run_laava", reads="r", vector_fa="v", vector_bed="b", repcap_name="pRep2Cap9", helper_name="pHelper"),
+        call("run_laava", reads="r", vector_fa="v", vector_bed="b"),
+        say("ok"),
+    ])
+    mcp = FakeMcp({"run_laava": [{"status": "queued", "run_id": "run-1"}], "wait_for_job": [RUN_OK]})
+    state = run_agent(llm, mcp)
+    first = json.loads(next(m["content"] for m in state["messages"] if m["role"] == "tool"))
+    assert "unknown argument(s) ['helper_name', 'repcap_name']" in first["message"]
+    assert len(mcp.calls) == 2 and mcp.calls[0][0] == "run_laava" and "repcap_name" not in mcp.calls[0][1]
+    assert state["artifacts"]["run"] == RUN_OK

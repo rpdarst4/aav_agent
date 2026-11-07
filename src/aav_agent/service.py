@@ -70,9 +70,6 @@ def summarize_per_read(path: Path) -> dict:
     }
 
 
-# Labels LAAVA gives reads by type. Any other label is the raw name of a reference record that was never given a
-# type (helper_name, repcap_name or lambda_name did not name it), such as "pHelper" when helper_name was wrong.
-STANDARD_LABELS = frozenset({"vector", "host", "repcap", "helper", "lambda", "(unmapped)"})
 OTHER_VECTOR_WARN_FRACTION = 0.9
 UNMAPPED_WARN_FRACTION = 0.5
 
@@ -92,13 +89,6 @@ def assess_summary(summary: dict) -> list[str]:
     if unmapped / total >= UNMAPPED_WARN_FRACTION:
         out.append(f"{unmapped:,} of {total:,} reads ({unmapped / total:.0%}) did not map to any supplied reference. "
                    "Check that the reads belong to this construct and that the references are the right ones.")
-    raw = {k: v for k, v in (summary.get("by_reference_label") or {}).items()
-           if k not in STANDARD_LABELS and not k.startswith("chimeric")}
-    if raw:
-        listed = ", ".join(f"{k} ({v:,})" for k, v in raw.items())
-        out.append(f"Reads were labelled with raw record names: {listed}. Those packaging records have no type, so "
-                   "repcap_name, helper_name or lambda_name probably names the wrong record (for example the helper "
-                   "plasmid's own record should be helper_name).")
     other = (summary.get("by_assigned_type") or {}).get("other-vector", 0)
     if other / total >= OTHER_VECTOR_WARN_FRACTION:
         out.append(f"{other:,} of {total:,} reads ({other / total:.0%}) were assigned 'other-vector': they map to the "
