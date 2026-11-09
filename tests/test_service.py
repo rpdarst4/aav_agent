@@ -658,12 +658,31 @@ def test_list_input_files_by_kind_pattern_and_folder(env):
 
 
 def test_list_input_files_errors_are_data_with_hints(env):
-    bad_kind = env.svc.list_input_files(kind="spreadsheet")
-    assert bad_kind["status"] == "error" and "fasta" in bad_kind["valid_kinds"]
     missing = env.svc.list_input_files(folder="no/such/place")
     assert missing["status"] == "error" and missing["folders_searched"]
     outside = env.svc.list_input_files(folder="/etc")
     assert outside["status"] == "error"  # not under an allowed folder
+
+
+def test_common_words_for_a_file_type_are_understood_and_unknown_ones_are_ignored_not_fatal(env):
+    """In a transcript the model asked for kind="fastq" five times and gave up when each was refused."""
+    reads = paths(env.svc.list_input_files(kind="reads", folder=str(env.fx)))
+    assert reads and reads[0].endswith("ss.spikein.fastq.gz")
+    for word in ("fastq", "FASTQ", ".fastq", "fq", "fastq.gz", "*.fastq.gz", "sequencing reads", " read "):
+        res = env.svc.list_input_files(kind=word, folder=str(env.fx))
+        assert paths(res) == reads and "note" not in res, word
+    assert [Path(p).name for p in paths(env.svc.list_input_files(kind="fa", folder=str(env.fx)))] == sorted(
+        Path(p).name for p in paths(env.svc.list_input_files(kind="fasta", folder=str(env.fx))))
+    assert [Path(p).name for p in paths(env.svc.list_input_files(kind="annotation"))] == ["vector.bed"]
+    assert [Path(p).name for p in paths(env.svc.list_input_files(kind="ubam", folder=str(env.fx)))] == []
+
+    # an unrecognised word is dropped, with a note, instead of failing the search
+    res = env.svc.list_input_files(kind="spreadsheet", query="spike", folder=str(env.fx))
+    assert res["status"] == "ok" and "'spreadsheet' is not recognised and was ignored" in res["note"]
+    assert "bam, bed, fasta, reads" in res["note"] and paths(res)[0].endswith("ss.spikein.fastq.gz")
+    # and the note is kept when the search is relaxed too
+    both = env.svc.list_input_files(kind="spreadsheet", pattern="*zebrafish*", folder=str(env.fx))
+    assert both["files"] == [] or "is not recognised" in both["note"]
 
 
 def test_describe_input_reads_names_from_the_files(env):

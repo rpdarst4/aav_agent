@@ -273,6 +273,28 @@ class AavService:
                 return resolved
         return None
 
+    # Words a model (or a person) uses for a file type. "fastq" is not one of the kinds, but it plainly means reads.
+    _KIND_WORDS = {
+        "reads": {"reads", "read", "fastq", "fq", "fastq.gz", "fq.gz", "sequencing", "sequencing reads", "long reads",
+                  "pacbio", "hifi", "ccs"},
+        "fasta": {"fasta", "fa", "fna", "fasta.gz", "fa.gz", "fna.gz", "genome", "plasmid", "sequence", "sequences",
+                  "construct", "reference"},
+        "bed": {"bed", "annotation", "annotations"},
+        "bam": {"bam", "ubam"},
+    }
+
+    def _normalize_kind(self, kind: str | None) -> tuple[str | None, str | None]:
+        """(kind, note). Synonyms are mapped to a real kind; an unrecognised word is ignored with a note, because
+        failing the whole search over a type word costs the caller a round trip for nothing."""
+        if not kind:
+            return None, None
+        word = kind.strip().lower().lstrip(".*")
+        for real, words in self._KIND_WORDS.items():
+            if word in words:
+                return real, None
+        return None, (f"kind {kind!r} is not recognised and was ignored; the kinds are "
+                      f"{', '.join(sorted(self._KIND_WORDS))}.")
+
     _STOPWORDS = frozenset({"the", "and", "for", "with", "from", "file", "files", "use", "using", "this", "that",
                             "run", "laava", "please", "screen", "contaminants", "of", "in", "on", "to", "an",
                             "is", "are", "its", "it", "my", "our", "under"})
@@ -303,8 +325,7 @@ class AavService:
         """
         from .inputs import KIND_PATTERNS, summarize_file
 
-        if kind and kind not in KIND_PATTERNS:
-            return self._error(f"unknown kind {kind!r}", valid_kinds=sorted(KIND_PATTERNS))
+        kind, kind_note = self._normalize_kind(kind)
         kind_patterns = [p.lower() for p in KIND_PATTERNS[kind]] if kind else ["*"]
         name_patterns = [p.strip().lower() for p in (pattern or "").split(",") if p.strip()]
         query_tokens = [t for t in dict.fromkeys(re.findall(r"[a-z0-9]+", (query or "").lower()))
@@ -364,14 +385,15 @@ class AavService:
             return hits, capped
 
         hits, capped = search_files(use_filters=True)
-        note = None
+        note = kind_note
         if not hits and (query_tokens or name_patterns) and (kind or folder):
             hits, capped = search_files(use_filters=False)
             if hits:
                 what_was_tried = " and ".join(x for x in (f"query {query!r}" if query_tokens else "",
                                                           f"pattern {pattern!r}" if name_patterns else "") if x)
-                note = (f"Nothing matched {what_was_tried}, so these are all the {kind or 'matching'} files"
-                        f"{' in ' + folder if folder else ''}. Choose by the description of each file.")
+                relaxed = (f"Nothing matched {what_was_tried}, so these are all the {kind or 'matching'} files"
+                           f"{' in ' + folder if folder else ''}. Choose by the description of each file.")
+                note = f"{kind_note} {relaxed}" if kind_note else relaxed
 
         truncated = len(hits) > limit
         files = []

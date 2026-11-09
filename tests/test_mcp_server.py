@@ -33,6 +33,10 @@ class FakeFastMCP:
         self.ran = transport
 
 
+def paths_of(listing):
+    return [f["path"] for f in listing["files"]]
+
+
 def call(tool, **kwargs):
     return asyncio.run(tool(**kwargs))
 
@@ -174,7 +178,9 @@ def test_file_tools_pass_kind_folder_and_path_through(env):
     assert not any(f["path"].endswith("vector.bed") for f in listed["files"])
     described = call(tools["describe_input"], path=str(env.fx / "packaging.fa"))
     assert [r["id"] for r in described["records"]] == ["pRep2Cap9", "pHelper", "Lambda"]
-    assert call(tools["list_input_files"], kind="nonsense")["status"] == "error"
+    odd = call(tools["list_input_files"], kind="nonsense", folder=str(env.fx))
+    assert odd["status"] == "ok" and "not recognised" in odd["note"]  # tolerated, with a note
+    assert paths_of(call(tools["list_input_files"], kind="fastq", folder=str(env.fx)))  # "fastq" means reads
 
 
 def test_the_screen_tool_names_the_available_databases(env):

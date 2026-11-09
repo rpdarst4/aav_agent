@@ -4,7 +4,7 @@ A local AI agent that runs [LAAVA](https://github.com/formbio/laava) on PacBio l
 
 LAAVA classifies reads as vector, packaging plasmid, host or chimeric, and counts everything else as unmapped. It does not say what that "everything else" is. For gene-therapy quality control that matters, because residual DNA from other sources (plasmid-production bacteria, insect cells, plants, other contaminants) is something regulators ask about. This project adds that step, and lets you drive the whole workflow in plain language:
 
-> *Run LAAVA on the ss spike-in fastq with the ss construct and its annotation BED, using the packaging and human genome (hg38) host files in laava/test, and screen the contaminants.*
+> *Run LAAVA on the ss spike-in fastq with the ss construct and its annotation BED, using the packaging and human genome host files, and screen the contaminants.*
 
 The agent finds the files, runs LAAVA, BLASTs the unmapped reads, classifies them by organism type, and adds a pie chart section to the LAAVA HTML report. LAAVA itself is used unmodified.
 
@@ -20,6 +20,8 @@ For a finished LAAVA run, a copy of the LAAVA report with a new **Contaminant sc
 * a table of reads and bases per type, and of the taxa identified,
 * the database actually used (title and build date, read from BLAST itself, never typed by hand),
 * warnings when the inputs look mismatched.
+
+![Unmapped reads by organism type, from the demonstration data](docs/img/contaminant-screening.png)
 
 Example, from the demonstration data (a real LAAVA test sample with 100+ synthetic contaminant reads spiked in):
 
@@ -157,8 +159,10 @@ To use a full NCBI database instead of the demo one, add it under `databases` an
 export OLLAMA_HOST=http://localhost:11434
 poetry run python -m aav_agent.agent --settings $PWD/config/settings.yaml -v \
   --transcript data/agent_transcripts/session.jsonl \
-  "Run LAAVA on the ss spike-in fastq with the ss construct and its annotation BED, using the packaging and human genome (hg38) host files in laava/test, and screen the contaminants."
+  "Run LAAVA on the ss spike-in fastq with the ss construct and its annotation BED, using the packaging and human genome host files, and screen the contaminants. Look for the reads in aav_agent/fixtures and the other inputs under laava/test."
 ```
+
+When the reads and the references live in different folders, say where each is, as in the last sentence above. A small model tends to apply one folder hint to every file; naming the folders per file avoids that.
 
 Progress goes to stderr, the answer to stdout. `-v` also prints every tool result; `--transcript` appends every prompt, call and result to a JSON-lines file, which is the first thing to read when the model does something odd. Without a prompt you get an interactive session that remembers earlier answers (so "now screen it against core_nt" works).
 
@@ -273,7 +277,7 @@ With a cloud model, the prompt and tool results leave your machine: file paths, 
 * **Chimeric reads are not analysed.** Telling expected chimeras (a payload with human sequence) from unexpected ones needs LAAVA's alignment segments, which it does not report; this is the next bioinformatics feature.
 * **One server process per run store, one job at a time.**
 * **Heuristics, not truth.** The "other-vector" and unmapped thresholds, and the species hints taken from file names, are rules of thumb.
-* **A small local model is the weak link.** See [Choosing a model](#choosing-a-model).
+* **A small local model is the weak link.** See [Choosing a model](#choosing-a-model). In particular, reads and references kept in different folders need the folders named in the prompt (see [Usage](#usage)).
 
 ---
 
