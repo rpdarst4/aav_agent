@@ -58,20 +58,25 @@ def make_tools(service: AavService) -> dict[str, Callable]:
         return await asyncio.to_thread(service.list_databases)
 
     async def list_input_files(
-        pattern: str | None = None, folder: str | None = None, kind: str | None = None, limit: int = 50
+        query: str | None = None, kind: str | None = None, folder: str | None = None,
+        pattern: str | None = None, limit: int = 50,
     ) -> dict:
-        """Find files the tools are allowed to read. kind is "reads" (FASTQ/BAM), "fasta" (.fa, .fasta, .fna),
-        "bed" or "bam"; use kind instead of guessing extensions. pattern is an optional name filter such as
-        "*packaging*" (comma-separate several). folder limits the search to one directory, for example
-        "laava/test" or a full path. Returns full paths; use them exactly. If truncated is true, narrow the
-        search with folder or pattern. Do not guess paths."""
-        return await asyncio.to_thread(service.list_input_files, pattern, limit, folder, kind)
+        """Find files the tools are allowed to read. Put the user's own words for the file in query, for
+        example query="ss spike-in fastq", "human genome hg38", "packaging" or "annotation bed": files are
+        ranked by how many of those words occur in their name, folder name or description, and each result
+        lists the words it matched. Do not make up name patterns. kind ("reads", "fasta", "bed", "bam") limits
+        the file type; folder limits the search to one directory and should be used only for files the user
+        said are there. pattern is an optional name filter such as "*packaging*". Every file comes with a
+        one-line description (FASTA record names and sizes, BED feature names, whether a FASTA looks like a
+        genome, a plasmid set or a single construct, and any species its name suggests); choose by it. If
+        nothing matches your query but kind or folder was given, the files of that kind in that folder are
+        returned with a note. Use the returned paths exactly; never guess a path."""
+        return await asyncio.to_thread(service.list_input_files, pattern, limit, folder, kind, query)
 
     async def describe_input(path: str) -> dict:
-        """Look inside an input file. For a FASTA it lists the record names and lengths (use these for
-        repcap_name, helper_name and lambda_name); for a BED it lists the feature names (use these for
-        itr_label_1, itr_label_2 and mitr_label); for reads it gives the format and size. Use it rather than
-        guessing names."""
+        """Look inside an input file. For a FASTA it lists the record names and lengths; for a BED it lists
+        the feature names (use these for itr_label_1 and itr_label_2); for reads it gives the format and
+        size. Use it rather than guessing names."""
         return await asyncio.to_thread(service.describe_input, path)
 
     async def run_laava(
@@ -81,9 +86,6 @@ def make_tools(service: AavService) -> dict[str, Callable]:
         vector_type: str = "unspecified",
         packaging_fa: str | None = None,
         host_fa: str | None = None,
-        repcap_name: str | None = None,
-        helper_name: str | None = None,
-        lambda_name: str | None = None,
         itr_label_1: str | None = None,
         itr_label_2: str | None = None,
         mitr_label: str | None = None,
@@ -101,16 +103,16 @@ def make_tools(service: AavService) -> dict[str, Callable]:
 
         reads: BAM or FASTQ(.gz) of PacBio reads. vector_fa: the AAV vector plasmid FASTA.
         vector_bed: LAAVA annotation BED for the vector. vector_type: "ss", "sc" or "unspecified".
-        packaging_fa: FASTA with the RepCap and helper plasmids (and lambda control). host_fa: host cell
-        genome FASTA. repcap_name, helper_name, lambda_name: record names inside packaging_fa.
-        itr_label_1/itr_label_2/mitr_label: ITR labels in the BED. flipflop_name and flipflop_fa:
+        packaging_fa: FASTA with the RepCap and helper plasmids (and lambda control); its records keep the
+        names they have in the file. host_fa: host cell genome FASTA.
+        itr_label_1/itr_label_2: ITR feature names in the BED (leave unset for the default); mitr_label: the
+        mutated ITR, for sc vectors only. flipflop_name and flipflop_fa:
         flip/flop reference. sample_id: defaults to the reads file name. The remaining arguments are
         LAAVA classification thresholds; leave them unset unless asked.
         Paths must come from list_input_files or the user, and must lie in the allowed folders."""
         spec = _clean({
             "reads": reads, "vector_fa": vector_fa, "vector_bed": vector_bed, "vector_type": vector_type,
-            "packaging_fa": packaging_fa, "host_fa": host_fa, "repcap_name": repcap_name,
-            "helper_name": helper_name, "lambda_name": lambda_name, "itr_label_1": itr_label_1,
+            "packaging_fa": packaging_fa, "host_fa": host_fa, "itr_label_1": itr_label_1,
             "itr_label_2": itr_label_2, "mitr_label": mitr_label, "flipflop_name": flipflop_name,
             "flipflop_fa": flipflop_fa, "sample_id": sample_id,
             "target_gap_threshold": target_gap_threshold,
@@ -147,6 +149,13 @@ def make_tools(service: AavService) -> dict[str, Callable]:
         """List recent runs, newest first, with status, sample id and unmapped read count. Use it to find
         a run_id when the user refers to an earlier run."""
         return await asyncio.to_thread(service.list_runs, limit)
+
+    try:  # name the databases up front, so the model does not guess "nt"
+        names = ", ".join(f"{d['name']}{' (default)' if d['default'] else ''}"
+                          for d in service.list_databases() if d["available"]) or "none available"
+        screen_contaminants.__doc__ += f" Available databases: {names}. Leave database unset to use the default."
+    except AttributeError:  # tests build the tool list without a real service
+        pass
 
     tools = [list_databases, list_input_files, describe_input, run_laava, screen_contaminants, wait_for_job, get_run, list_runs]
     return {t.__name__: t for t in tools}

@@ -7,6 +7,7 @@ import inspect
 import json
 import sys
 import types
+from pathlib import Path
 
 import pytest
 from test_service import GOLDEN_UNMAPPED, FakeRunner, env, spec_dict, store  # noqa: F401  (fixtures)
@@ -30,6 +31,10 @@ class FakeFastMCP:
 
     def run(self, transport=None):
         self.ran = transport
+
+
+def paths_of(listing):
+    return [f["path"] for f in listing["files"]]
 
 
 def call(tool, **kwargs):
@@ -61,13 +66,15 @@ def test_run_laava_tool_starts_a_job_and_wait_for_job_finishes_it(env):
     tools = mcp_server.make_tools(env.svc)
     started = call(tools["run_laava"], reads=str(env.fx / "ss.spikein.fastq.gz"),
                    vector_fa=str(env.fx / "vector.fa"), vector_bed=str(env.fx / "vector.bed"),
-                   vector_type="ss", packaging_fa=str(env.fx / "packaging.fa"), repcap_name="pRep2Cap9")
+                   vector_type="ss", packaging_fa=str(env.fx / "packaging.fa"), host_fa=str(env.fx / "host.fa"))
     assert started["status"] == "queued"
     done = call(tools["wait_for_job"], run_id=started["run_id"], timeout_s=10)
     assert done["status"] == "succeeded" and done["summary"]["unmapped_reads"] == GOLDEN_UNMAPPED
     # unset optional arguments must not reach LAAVA as None
     params = json.loads((env.settings.runs_dir / started["run_id"] / "params.json").read_text())
-    assert params["repcap_name"] == "pRep2Cap9" and params["helper_name"] == "" and None not in params.values()
+    assert params["packaging_fa"].endswith("packaging.fa") and None not in params.values()
+    # the packaging records keep their own names: nothing is passed for repcap/helper/lambda
+    assert params["repcap_name"] == params["helper_name"] == params["lambda_name"] == ""
 
     screened = call(tools["screen_contaminants"], run_id=started["run_id"])
     assert screened["status"] == "queued" and screened["screen_id"] == "screen-001"
@@ -100,7 +107,7 @@ def test_list_databases_and_input_files_tools(env):
     tools = mcp_server.make_tools(env.svc)
     assert {d["name"] for d in call(tools["list_databases"])} == {"demo", "nt"}
     files = call(tools["list_input_files"], pattern="*.fa")
-    assert any(p.endswith("vector.fa") for p in files["files"])
+    assert any(f["path"].endswith("vector.fa") for f in files["files"])
 
 
 def test_build_service_from_environment(tmp_path):
@@ -167,8 +174,32 @@ def test_main_parses_settings_argument(tmp_path, monkeypatch):
 def test_file_tools_pass_kind_folder_and_path_through(env):
     tools = mcp_server.make_tools(env.svc)
     listed = call(tools["list_input_files"], kind="fasta", folder=str(env.fx))
-    assert listed["status"] == "ok" and any(p.endswith("packaging.fa") for p in listed["files"])
-    assert not any(p.endswith("vector.bed") for p in listed["files"])
+    assert listed["status"] == "ok" and any(f["path"].endswith("packaging.fa") for f in listed["files"])
+    assert not any(f["path"].endswith("vector.bed") for f in listed["files"])
     described = call(tools["describe_input"], path=str(env.fx / "packaging.fa"))
     assert [r["id"] for r in described["records"]] == ["pRep2Cap9", "pHelper", "Lambda"]
-    assert call(tools["list_input_files"], kind="nonsense")["status"] == "error"
+    odd = call(tools["list_input_files"], kind="nonsense", folder=str(env.fx))
+    assert odd["status"] == "ok" and "not recognised" in odd["note"]  # tolerated, with a note
+    assert paths_of(call(tools["list_input_files"], kind="fastq", folder=str(env.fx)))  # "fastq" means reads
+
+
+def test_the_screen_tool_names_the_available_databases(env):
+    tools = mcp_server.make_tools(env.svc)
+    assert "Available databases: demo (default)" in tools["screen_contaminants"].__doc__
+    assert "nt" not in tools["screen_contaminants"].__doc__.split("Available databases:")[1]  # not offered: unavailable
+    again = mcp_server.make_tools(env.svc)  # rebuilding does not pile up text
+    assert again["screen_contaminants"].__doc__.count("Available databases") == 1
+
+
+def test_list_input_files_tool_takes_the_users_words(env):
+    tools = mcp_server.make_tools(env.svc)
+    res = call(tools["list_input_files"], query="spike-in fastq")
+    assert Path(res["files"][0]["path"]).name == "ss.spikein.fastq.gz" and res["files"][0]["matches"]
+    params = list(inspect.signature(tools["list_input_files"]).parameters)
+    assert params[0] == "query"  # the first argument a model fills in is the one that works best
+
+
+def test_the_agent_cannot_set_the_packaging_renaming_options(env):
+    names = set(inspect.signature(mcp_server.make_tools(env.svc)["run_laava"]).parameters)
+    assert not names & {"repcap_name", "helper_name", "lambda_name"}
+    assert {"packaging_fa", "host_fa", "itr_label_1", "mitr_label"} <= names  # the rest of the interface is intact

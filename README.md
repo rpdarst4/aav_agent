@@ -4,7 +4,7 @@ A local AI agent that runs [LAAVA](https://github.com/formbio/laava) on PacBio l
 
 LAAVA classifies reads as vector, packaging plasmid, host or chimeric, and counts everything else as unmapped. It does not say what that "everything else" is. For gene-therapy quality control that matters, because residual DNA from other sources (plasmid-production bacteria, insect cells, plants, other contaminants) is something regulators ask about. This project adds that step, and lets you drive the whole workflow in plain language:
 
-> *Run LAAVA on the ss spike-in fastq with the ss construct and its annotation BED, using the packaging and human genome (hg38) host files in laava/test, and screen the contaminants.*
+> *Run LAAVA on the ss spike-in fastq with the ss construct and its annotation BED, using the packaging and human genome host files, and screen the contaminants.*
 
 The agent finds the files, runs LAAVA, BLASTs the unmapped reads, classifies them by organism type, and adds a pie chart section to the LAAVA HTML report. LAAVA itself is used unmodified.
 
@@ -21,11 +21,13 @@ For a finished LAAVA run, a copy of the LAAVA report with a new **Contaminant sc
 * the database actually used (title and build date, read from BLAST itself, never typed by hand),
 * warnings when the inputs look mismatched.
 
+![Unmapped reads by organism type, from the demonstration data](docs/img/contaminant-screening.png)
+
 Example, from the demonstration data (a real LAAVA test sample with 100+ synthetic contaminant reads spiked in):
 
 ```
 LAAVA run 20261016-231028-492d7e (sample mcp.test): 3,627 reads, 130 unmapped (3.6%).
-  By reference: vector 3,414; (unmapped) 130; chimeric-vector 30; repcap 27; host 13; helper 8; chimeric-nonvector 5
+  By reference: vector 3,414; (unmapped) 130; chimeric-vector 30; pRep2Cap9 27; host 13; pHelper 8; chimeric-nonvector 5
 Contaminant screen screen-001 against AAV demo contaminants, Oct 7, 2026: 130 unmapped reads classified.
   soil bacteria: 50 (38.5%)
   insect: 24 (18.5%)
@@ -36,7 +38,7 @@ Contaminant screen screen-001 against AAV demo contaminants, Oct 7, 2026: 130 un
 Report with contaminant section: data/runs/.../mcp.test_AAV_report.contaminants.html
 ```
 
-On the spiked data, 109 of 110 synthetic reads land in the right category. The miss is a read with no BLAST hit at all, probably low-complexity masking (not confirmed). The 20 unmapped reads that were in the real sample resolve to *E. coli* (7) and no hit against the demo database (13, which are expected to be human; the demo database contains no human sequence).
+On the spiked data, 109 of 110 synthetic reads land in the right category. The miss is a read with no BLAST hit at all. The 20 unmapped reads that were in the real sample resolve to *E. coli* (7) and no hit against the demo database (13, which are expected to be human; the demo database contains no human sequence).
 
 ---
 
@@ -76,7 +78,8 @@ Choices made because the model is small (developed against `qwen3:8b` on Ollama)
 * **Numbers are not left to the model.** After the model's reply, the answer gets a results block built directly from the tool output (read counts, buckets, report path).
 * **Errors are data.** Bad input comes back as a readable message the model can act on, not an exception. Arguments a tool does not have are rejected before the call.
 * **Files are chosen by content.** `list_input_files` ranks files by the user's own words and describes each one ("FASTA, 2 records (chr19, chrM), 24.6 Mb; looks like a genome, so a candidate host genome; the file name suggests human"). `describe_input` reads record and feature names out of FASTA and BED files, so names are never guessed.
-* **Inputs are validated before anything runs**: file paths must lie under allowed folders (symlinks cannot escape them); `repcap_name`, `helper_name` and `lambda_name` must name records in the packaging FASTA; ITR labels must be feature names in the annotation BED; the BED must describe the vector FASTA. After a run, heuristics warn when most reads are `other-vector` or unmapped, or carry raw record names, which usually means the reads, construct and annotation do not belong together.
+* **Inputs are validated before anything runs**: file paths must lie under allowed folders (symlinks cannot escape them); ITR labels must be feature names in the annotation BED; the BED must describe the vector FASTA; `mitr_label` (the mutated ITR) is refused for single-stranded vectors, which have none. After a run, heuristics warn when most reads are `other-vector` or unmapped, which usually means the reads, construct and annotation do not belong together.
+* **Packaging components keep their own names.** LAAVA can relabel packaging records as "repcap" or "helper", but the agent never sets those options: researchers name the components in the packaging FASTA (`pRep2Cap9`, `pHelper`), and those names appear in the report unchanged.
 * **Provenance** is recorded per run: input checksums, LAAVA git commit and dirty flag, container image IDs and digests, Nextflow version, BLAST version, and the database title, date and sequence count.
 
 ---
@@ -90,7 +93,7 @@ Choices made because the model is small (developed against `qwen3:8b` on Ollama)
 * [Ollama](https://ollama.com/) reachable from the machine running the agent, with a tool-capable model (`qwen3:8b` tested). It can run locally or on another machine; larger or cloud models are more reliable, see [Choosing a model](#choosing-a-model)
 * Optional: MongoDB for run records (otherwise a folder of JSON files is used); BLAST+ only if you run `scripts/` outside Docker
 
-Developed on macOS (Intel) with Ollama on a separate Windows GPU machine. On Windows, run everything except Ollama inside WSL2.
+On Windows, run everything except Ollama inside WSL2.
 
 ---
 
@@ -132,6 +135,8 @@ databases:
 nxf_syntax_parser: v1        # LAAVA's nextflow.config needs the older parser on recent Nextflow
 ```
 
+The demo BLAST database is built from `fixtures/contaminants/` by `scripts/build_demo_db.sh` and is not committed (`data/` is git-ignored), so it is rebuilt, with its checksums and tool versions recorded, on every machine.
+
 To use a full NCBI database instead of the demo one, add it under `databases` and pass its name. The code never loads NT into the repo; databases are mounted from elsewhere.
 
 ### Environment variables
@@ -154,8 +159,10 @@ To use a full NCBI database instead of the demo one, add it under `databases` an
 export OLLAMA_HOST=http://localhost:11434
 poetry run python -m aav_agent.agent --settings $PWD/config/settings.yaml -v \
   --transcript data/agent_transcripts/session.jsonl \
-  "Run LAAVA on the ss spike-in fastq with the ss construct and its annotation BED, using the packaging and human genome (hg38) host files in laava/test, and screen the contaminants."
+  "Run LAAVA on the ss spike-in fastq with the ss construct and its annotation BED, using the packaging and human genome host files, and screen the contaminants. Look for the reads in aav_agent/fixtures and the other inputs under laava/test."
 ```
+
+When the reads and the references live in different folders, say where each is, as in the last sentence above. A small model tends to apply one folder hint to every file; naming the folders per file avoids that.
 
 Progress goes to stderr, the answer to stdout. `-v` also prints every tool result; `--transcript` appends every prompt, call and result to a JSON-lines file, which is the first thing to read when the model does something odd. Without a prompt you get an interactive session that remembers earlier answers (so "now screen it against core_nt" works).
 
@@ -266,18 +273,18 @@ With a cloud model, the prompt and tool results leave your machine: file paths, 
 
 * **Not validated for regulated use.** No qualification, audit trail or access control beyond the run records.
 * **The demo database is small** and has no human sequence, so human reads come back as "no hit". Use a full database (`core_nt`) for real work.
-* **Packaging references are handled one record per name.** Several FASTA files for helper, RepCap and lambda that must be concatenated, and RepCap split over several plasmids sharing one type, are not supported yet. Packaging records without a type (for example `E1A_E1B`, `Fiber`) keep their own names as labels, and the run warns when reads map to them.
+* **Packaging FASTA files are not combined for you.** LAAVA takes one packaging FASTA, so several files for the helper, RepCap and lambda control must be concatenated first; the agent does not do that yet.
 * **Chimeric reads are not analysed.** Telling expected chimeras (a payload with human sequence) from unexpected ones needs LAAVA's alignment segments, which it does not report; this is the next bioinformatics feature.
 * **One server process per run store, one job at a time.**
-* **Heuristics, not truth.** The "other-vector" and unmapped thresholds, and the species hints taken from file names, are rules of thumb. The `mitr_label` check (refused for single-stranded vectors) rests on my reading of LAAVA; remove it if LAAVA uses the label there.
-* **A small local model is the weak link.** See [Choosing a model](#choosing-a-model).
+* **Heuristics, not truth.** The "other-vector" and unmapped thresholds, and the species hints taken from file names, are rules of thumb.
+* **A small local model is the weak link.** See [Choosing a model](#choosing-a-model). In particular, reads and references kept in different folders need the folders named in the prompt (see [Usage](#usage)).
 
 ---
 
 ## Roadmap
 
 * a tool that proposes a complete input set (reads, vector, annotation, packaging, host) for the model to confirm, and a catalog of lab reference sets
-* reference sets: concatenating several FASTA files and assigning several record names to one type
+* combining several FASTA files into one packaging FASTA
 * chimera analysis from LAAVA's alignments, with a map of sequence shared between vector and helper plasmids
 * an evaluation set of prompts with checkable outcomes, to compare models objectively
 * PDF output; AWS Batch execution (the paths and storage are already URI-friendly, the Batch profile is an untested sketch)
@@ -290,4 +297,4 @@ With a cloud model, the prompt and tool results leave your machine: file paths, 
 * NCBI BLAST+ and the NCBI taxonomy; the Model Context Protocol SDK; LangGraph; Ollama.
 * This repository contains only code, public or simulated data, and small fixtures. It contains no data from any employer or collaborator.
 
-**License:** TODO (choose one before publishing).
+**License:** [MIT](LICENSE). LAAVA and the PacBio example data have their own terms.

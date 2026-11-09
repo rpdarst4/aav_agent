@@ -371,6 +371,15 @@ def test_compact_shrinks_lists_structurally_and_stays_valid_json():
     assert compact(files[:5]) == json.dumps(files[:5])  # a result that fits is passed through unchanged
 
 
+def test_compact_handles_a_file_listing_with_descriptions():
+    files = [{"path": f"/data/some/long/folder/name/sample_{i:03d}.fa",
+              "what": "FASTA, 2 records (chr19, chrM), 24.6 Mb; looks like a genome"} for i in range(60)]
+    text = compact({"status": "ok", "files": files, "truncated": False}, max_chars=3000)
+    out = json.loads(text)
+    assert len(text) <= 3000 and out["status"] == "ok"
+    assert out["files"][0] == files[0] and out["files"][-1].endswith("more items omitted")  # entries stay whole
+
+
 def test_compact_keeps_the_failure_log_even_when_other_fields_are_huge():
     big = {f"label_{i}": "z" * 400 for i in range(40)}
     result = {"status": "failed", "error": "nextflow exited with code 1", "log_tail": "ERROR: missing file",
@@ -518,3 +527,53 @@ def test_warnings_from_start_and_finish_are_merged_without_duplicates():
     seen = json.loads(next(m["content"] for m in state["messages"] if m["role"] == "tool"))
     assert seen["warnings"] == [start_warning, data_warning]
     assert state["final"].count(start_warning) == 1 and f"Warning: {data_warning}" in state["final"]
+
+
+# ---------------------------------------------------------------- local vs. cloud Ollama client setup
+
+
+def test_client_kwargs_send_the_api_key_only_to_ollama_dot_com():
+    from aav_agent.agent.llm import client_kwargs
+
+    assert client_kwargs(None, None) == {}  # default local server
+    assert client_kwargs("http://192.168.1.20:11434", None) == {"host": "http://192.168.1.20:11434"}
+    # a key with no host means Ollama's cloud
+    assert client_kwargs(None, "k") == {"host": "https://ollama.com", "headers": {"Authorization": "Bearer k"}}
+    assert client_kwargs("https://ollama.com", "k")["headers"] == {"Authorization": "Bearer k"}
+    assert client_kwargs("ollama.com", "k")["headers"] == {"Authorization": "Bearer k"}  # no scheme
+    # the key must never be sent to the PC on your network, or to a look-alike host
+    assert "headers" not in client_kwargs("http://192.168.1.20:11434", "k")
+    assert "headers" not in client_kwargs("https://ollama.com.evil.example", "k")
+    assert "headers" not in client_kwargs("https://notollama.com.example", "k")
+
+
+def test_ollama_chat_builds_its_client_from_host_and_key(monkeypatch):
+    import os
+
+    made = []
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            made.append(kwargs)
+
+    OllamaChat(host="http://pc:11434", client_cls=FakeClient, api_key="")
+    OllamaChat(model="gpt-oss:120b", client_cls=FakeClient, api_key="secret")
+    monkeypatch.setitem(os.environ, "OLLAMA_API_KEY", "from-env")  # used when no key is passed
+    OllamaChat(client_cls=FakeClient)
+    assert made[0] == {"host": "http://pc:11434"}
+    assert made[1] == {"host": "https://ollama.com", "headers": {"Authorization": "Bearer secret"}}
+    assert made[2]["headers"] == {"Authorization": "Bearer from-env"}
+
+
+def test_a_model_that_tries_to_name_the_packaging_components_is_told_it_cannot():
+    llm = FakeLLM([
+        call("run_laava", reads="r", vector_fa="v", vector_bed="b", repcap_name="pRep2Cap9", helper_name="pHelper"),
+        call("run_laava", reads="r", vector_fa="v", vector_bed="b"),
+        say("ok"),
+    ])
+    mcp = FakeMcp({"run_laava": [{"status": "queued", "run_id": "run-1"}], "wait_for_job": [RUN_OK]})
+    state = run_agent(llm, mcp)
+    first = json.loads(next(m["content"] for m in state["messages"] if m["role"] == "tool"))
+    assert "unknown argument(s) ['helper_name', 'repcap_name']" in first["message"]
+    assert len(mcp.calls) == 2 and mcp.calls[0][0] == "run_laava" and "repcap_name" not in mcp.calls[0][1]
+    assert state["artifacts"]["run"] == RUN_OK

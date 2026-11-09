@@ -98,10 +98,12 @@ async def run(args: argparse.Namespace) -> int:
                     return 0
                 if not prompt or prompt in ("exit", "quit"):
                     return 0
+            on_event("user", {"content": prompt})
             state = await app.ainvoke(
                 {"messages": history + [{"role": "user", "content": prompt}], "steps": 0, "artifacts": {}},
                 {"recursion_limit": args.max_steps * 3 + 10},
             )
+            on_event("final", {"content": state["final"]})
             print(state["final"])
             history = carry_over(history + [{"role": "user", "content": prompt}], state["final"])
 
